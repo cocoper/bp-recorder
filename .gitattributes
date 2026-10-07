@@ -1,0 +1,9 @@
+# 行尾策略
+#
+# `tools/testdata/**` 是**故意的字节夹具**：里面有 CRLF 行尾与 GBK 编码的样例文件，
+# 正是 check-import-file.mjs / check-encoding-fallback.mjs 要验证的东西。
+# 全局 core.autocrlf=input 会把 CRLF 规范成 LF（下次 checkout 时改写工作区文件），
+# 从而**静默改变测试夹具的字节**。所以这里显式关掉这些文件的文本属性。
+* text=auto
+tools/testdata/** -text
+tools/parity/.build/** -text
