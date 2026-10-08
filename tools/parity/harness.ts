@@ -214,6 +214,54 @@ eq(dm[0].medComplete, false, '10-05 无服药标记');
 eq(dm[1].medComplete, true, '10-06 有服药标记');
 eq(StatsService.dailyMeans([], []).length, 0, '空数据 → 空序列');
 
+group('当日逐次序列（今天档）');
+{
+  // 同日三次测量（含一次无心率）：每次测量各占一个点，不做同日聚合
+  const t1: number = ts(2026, 10, 6, 8, 0);
+  const t2: number = ts(2026, 10, 6, 12, 30);
+  const t3: number = ts(2026, 10, 6, 21, 40);
+  const source: BpRecord[] = [
+    rec(t3, 138, 88, 80, 3), rec(t1, 128, 82, 72, 1), rec(t2, 132, 84, null, 2)
+  ];
+  const ip = StatsService.intradayPoints(source, [DateUtils.startOfDay(t1)]);
+  eq(ip.length, 3, '同日三次测量 → 3 个点');
+  eq(ip[0].dayStart, t1, '第 1 点 dayStart = 实际测量时刻 08:00');
+  eq(ip[1].dayStart, t2, '第 2 点 dayStart = 实际测量时刻 12:30');
+  eq(ip[2].dayStart, t3, '第 3 点 dayStart = 实际测量时刻 21:40');
+  eq(ip[0].count, 1, 'count 恒为 1（第 1 点）');
+  eq(ip[1].count, 1, 'count 恒为 1（第 2 点）');
+  eq(ip[2].count, 1, 'count 恒为 1（第 3 点）');
+  eq(ip[0].sysAvg, 128, '逐次收缩压取原值');
+  eq(ip[1].diaAvg, 84, '逐次舒张压取原值');
+  eq(ip[0].hrAvg, 72, '有心率时取原值');
+  eq(ip[1].hrAvg, null, '无心率 → null');
+  eq(ip[2].hrAvg, 80, '有心率时取原值');
+  eq(ip[0].medComplete, true, 'medCompleteDays 含该日 → true');
+  eq(ip[2].medComplete, true, 'medCompleteDays 含该日 → 每个点都标 true');
+  eq(source[0].measureTime, t3, '不就地修改入参顺序（slice 后排序）');
+}
+{
+  // 跨天数据：只保留最后一条记录所在自然日
+  const prev: number = ts(2026, 10, 5, 21, 40);
+  const t1: number = ts(2026, 10, 6, 8, 0);
+  const t2: number = ts(2026, 10, 6, 20, 0);
+  const ip = StatsService.intradayPoints([
+    rec(prev, 140, 90, null, 1), rec(t1, 128, 82, 72, 2), rec(t2, 130, 84, 76, 3)
+  ], [DateUtils.startOfDay(t1)]);
+  eq(ip.length, 2, '跨天数据 → 只留最后一条所在日 10-06');
+  eq(ip[0].dayStart, t1, '跨天兜底：第 1 点为 10-06 08:00');
+  eq(ip[1].dayStart, t2, '跨天兜底：第 2 点为 10-06 20:00');
+}
+{
+  // medCompleteDays 不含该日 → 标记为 false
+  const t1: number = ts(2026, 10, 6, 8, 0);
+  const otherDay: number = DateUtils.startOfDay(ts(2026, 10, 5, 8, 0));
+  const ip = StatsService.intradayPoints([rec(t1, 128, 82, 72, 1)], [otherDay]);
+  eq(ip.length, 1, '单条记录亦返回一个点');
+  eq(ip[0].medComplete, false, 'medCompleteDays 不含该日 → false');
+}
+eq(StatsService.intradayPoints([], []).length, 0, '空数据 → 空序列');
+
 group('分级分布（合计恰为 100.0%）');
 const dist7: BpRecord[] = [
   rec(day1, 110, 70, null, 1), rec(day1, 115, 75, null, 2),
