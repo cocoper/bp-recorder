@@ -365,6 +365,8 @@ export namespace reminderAgentManager {
   export function cancelReminder(reminderId: number): Promise<void>;
   export function cancelAllReminders(): Promise<void>;
   export function getValidReminders(): Promise<Array<number>>;
+  export interface ReminderInfo { reminderId: number; reminderReq: ReminderRequestTimer | ReminderRequestAlarm }
+  export function getAllValidReminders(): Promise<Array<ReminderInfo>>;
 }
 `,
     js: `exports.reminderAgentManager = {};`
