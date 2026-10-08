@@ -419,6 +419,30 @@ eq(drafts[13].scheduledTime, ts(2026, 10, 12, 18, 0), '预生成末条为第 7 �
 const draftsEnd = MedService.pendingDrafts([plan(1, 1, ['08:00'], '2026-10-01', '2026-10-03', true)], meds, ts(2026, 10, 1, 12, 0), 7);
 eq(draftsEnd.length, 3, '结束日期截断预生成（10-01~10-03）');
 
+// v1.15 / 裁决 D3：进入前台时把 end_date 已过的计划自动停用（每日代理闹钟没有结束日期参数）
+group('过期计划自动停用（FR-8.3）');
+const expToday: string = '2026-10-07';
+const expPlans: MedPlan[] = [
+  plan(11, 1, ['07:30'], '2026-09-01', '2026-10-06', true),
+  plan(12, 2, ['07:30'], '2026-09-01', '2026-10-07', true),
+  plan(13, 3, ['07:30'], '2026-09-01', null, true),
+  plan(14, 4, ['07:30'], '2026-09-01', '2026-10-01', false)
+];
+const expIds = MedService.expiredPlanIds(expPlans, expToday);
+eq(expIds.length, 1, '只有「昨天已过期且仍生效」的计划被判定为过期');
+eq(expIds[0], 11, '命中 10-06 到期那条');
+eq(MedService.expiredPlanIds([plan(15, 1, ['07:30'], '2026-09-01', '2026-10-08', true)], expToday).length, 0,
+  '明天才到期的计划不判定');
+eq(MedService.expiredPlanIds(expPlans, '2026-10-08').length, 2,
+  '再过一天：10-06 与 10-07 两条都命中，已停用那条（10-01）不重复计数');
+eq(MedService.expiredPlanIds(expPlans, 'not-a-date').length, 0, 'today 非法时一律不判定（宁可不停用，也不误停用）');
+eq(MedService.expiredPlanIds([], expToday).length, 0, '空计划列表返回空');
+// 展示用：自动停用后 isActive 已是 false，仍要能认出「它是到期停用的」，否则用户只看到「未设置服药计划」
+eq(MedService.expiredEndDate(expPlans, 4, expToday), '2026-10-01', '已停用的过期计划仍能被 expiredEndDate 认出');
+eq(MedService.expiredEndDate(expPlans, 1, expToday), '2026-10-06', '生效中但已到期的计划同样可认出');
+eq(MedService.expiredEndDate(expPlans, 3, expToday), null, '长期计划（endDate=null）不会被认作到期');
+eq(MedService.expiredEndDate(expPlans, 99, expToday), null, '其它药品返回 null');
+
 group('提醒合并（FR-8.4）');
 const merged = MedService.groupBySlot([
   { medicationId: 1, medName: '缬沙坦', dosage: '1片', scheduledTime: ts(2026, 10, 6, 7, 30), planId: 1 },
