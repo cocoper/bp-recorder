@@ -255,6 +255,7 @@ v1.11 交付后，用户回看真机截图并确认：
   - **状态列词表**（用药打卡）：把文件里的状态文字归一化为 `taken` / `skipped` / `missed` / `pending`，词表权威定义在 `common/Vocab.ets` 的 `ImportVocab`（`statusTaken` / `statusSkipped` / `statusMissed` / `statusPending` / `statusMakeup`），不在解析代码里散落硬编码字符串。**「补记」标记可能写在括号里**（例如 `已服用(补记)`），必须识别为 `taken` 且**保留文件中的实际打卡时间**，不得用导入时刻顶替 —— 否则「补记 = taken_time 晚于计划时间 + 2h」的判定会失效。
   - **医学校验与录入完全一致**：数值范围、收缩压 > 舒张压等口径一律复用 `BpValidator`，本路径**不得另立一套阈值**。
   - **判重与入库复用** FR-6.6 / FR-6.8 的既有实现（同一判重键、同一单事务），不新开第二条数据通路。**自家导出文件（FR-6.1 / FR-6.4 / FR-6.9 的产物）与别处来的文件走同一条识别管线**：识别器对本 App 自家表头有最高置信度，两条路径产出的**判重键完全一致**，因此同一份数据经任一入口都不会重复入库。对拍用例见 `tools/parity/harness.ts` 的「外部来源：与自家导出格式互认（两条路径口径一致）」组。
+  - **实现落点（v1.15 补记）**：外部来源的**列识别与容错解析在 `service/GenericImportService.ets`**（其中与格式相关、无副作用的部分在 `common/LooseParse.ets`，可单测），**判重与单事务入库复用 `service/ImportService.ets`** 的既有通路；两者合起来就是上文所说的「同一条识别管线」。此前文档只在 4.2 列了 `ImportService`，容易让人以为解析也在那里。
   - 若识别为**用药计划**列结构，不直接入库，而是提示改用「用药计划」类型（避免把计划当打卡导入）。
 
 **FR-7 设置**
@@ -504,7 +505,7 @@ pending（待服）
 | 偏好存储 | `@kit.ArkData` Preferences | 设置项 |
 | 图表 | Canvas 自绘折线图 | 不引入三方图表库，避免依赖风险；绘制要求见 6.3 |
 | 文件导出 | `@kit.CoreFileKit` Picker + `@kit.CoreFileKit` fs | CSV 保存，无需持久文件权限 |
-| 服药提醒 | 首选 `@kit.BackgroundTasksKit` reminderAgent | 闹钟式提醒，需声明 `ohos.permission.PUBLISH_AGENT_REMINDER`（**v1.2 写的 `ohos.permission.REMINDER_AGENT` 并不存在**）。该权限为 **normal 级 / system_grant**，声明后**安装即授予，不阻塞编译与安装、也不要求手动签名**。**v1.14 勘误**：此前把 `1700001` 解释为「部分设备 / ROM 对代理提醒有运行时管控」，与官方错误码表不符 —— `1700001 Notification is not enabled` 的含义就是**通知使能未开启**（未请求授权、或用户在系统里关了本应用通知开关），与设备型号无关。因此发布前必须确保已获通知授权（见下行） |
+| 服药提醒 | 首选 `@kit.BackgroundTasksKit` reminderAgent | 闹钟式提醒，需声明 `ohos.permission.PUBLISH_AGENT_REMINDER`（**v1.2 写的 `ohos.permission.REMINDER_AGENT` 并不存在**）。该权限为 **normal 级 / system_grant**，声明后**安装即授予，不阻塞编译与安装、也不要求手动签名**。**v1.14 勘误**：此前把 `1700001` 解释为「部分设备 / ROM 对代理提醒有运行时管控」，与官方错误码表不符 —— `1700001 Notification is not enabled` 的含义就是**通知使能未开启**（未请求授权、或用户在系统里关了本应用通知开关），与设备型号无关。因此发布前必须确保已获通知授权（见下行）。**权限本身安装即授予**（`PermissionDefinitions.json` 实证：`system_grant` / `normal` / `provisionEnable: true`）；但**代理提醒功能本身**是否另受设备侧运行时管控，尚未由真机定论，**以真机 V1 结论为准**（见《运行与部署说明》§7） |
 | 提醒回退方案 | `@kit.NotificationKit` 本地通知 + **进入前台补发** | reminderAgent 不可用时回退；需运行时申请通知授权，且**必须在首次建立服药计划时就请求**（v1.14：此前只有设置页那一个按钮会请求，导致从未进过设置页的用户提醒 100% 不生效；v1.14 收尾起**启动时若有生效时点且从未问过会再补请求一次**，每次安装至多弹一次）。注意：本地通知**无法在 App 完全退出后自行唤醒**（平台约束），因此另设「进入前台按自然日去重补发当日漏服通知」作为兜底触达（FR-9.1 第三条路径） |
 | 图片生成 | `@kit.ArkUI` componentSnapshot | 图表/报告页离屏渲染为 PNG |
 | 分享 | 系统分享面板（ShareKit/systemShare） | 不集成三方 SDK，无网络权限 |
@@ -556,7 +557,8 @@ entry/src/main/ets/
 │   ├── MedService.ets         // 打卡状态机、依从率、预生成逻辑（纯函数为主，可单测）
 │   ├── ReminderService.ets    // reminderAgent/通知调度封装，含能力探测与回退
 │   ├── ReportService.ets      // 报告数据组装（纯函数，可单测）
-│   ├── ImportService.ets      // CSV 解析、判重、事务导入（解析部分纯函数，可单测）
+│   ├── ImportService.ets      // 判重 + 单事务入库（自家导出格式；纯函数部分可单测）
+│   ├── GenericImportService.ets // FR-6.11 外部来源 CSV：两级列识别（表头别名 + 列内容画像）、容错解析、手工列映射（全项目最大的服务文件）
 │   ├── ShareService.ets       // componentSnapshot 出图、系统分享、SaveButton 保存
 │   ├── ExportService.ets      // CSV 导出（血压 + 用药打卡 + 用药计划）
 │   └── FileService.ets        // picker 选取/保存、URI 读写（Kit 适配层）
@@ -564,6 +566,8 @@ entry/src/main/ets/
 │   ├── Constants.ets          // 阈值常量、文案常量、资源键映射
 │   ├── DateUtils.ets
 │   ├── Csv.ets                // CSV 编解码纯函数
+│   ├── LooseParse.ets         // 外部来源的宽松解析纯函数库（日期/时间多写法、数值与单位、血压组合值、kPa 换算）
+│   ├── Errors.ets             // AppError extends Error：承接 BusinessError 的 code，规避 arkts-limited-throw
 │   ├── Vocab.ets              // 文案词表与工厂（页面侧把 Resource 解析为字符串后传入服务层）
 │   ├── Prefs.ets              // Preferences 读写封装
 │   ├── ResUtils.ets           // 资源解析（显式传 context）
@@ -574,15 +578,15 @@ entry/src/main/ets/
 **工作区里另有两个不进 APK、但属于本方案交付物的目录**（v1.4 登记 —— 此前它们只在第 10 章风险表里被顺带提到过一次，不属于任何里程碑，也谈不上版本治理）：
 
 ```
-tools/     // 离线校验链：13 个 node 脚本 + parity 类型/断言对拍（约 4175 行、535 条断言）。
+tools/     // 离线校验链：12 个 node 脚本 + parity 类型/断言对拍（约 4600 行、556 条断言）。
            // 没有真机时，这是唯一能自动化验证「导出→回导幂等」「v1→v2 迁移顺序」「文案↔代码双向一致」
            // 「工程配置项」「API 用法」的手段；改动产品代码后必须全跑一遍，结果记入 docs/自检报告.md。
 docs/      // 自检报告、决策记录、运行与部署说明（含设备侧待办 V1–V8）、审查意见与回应、上架清单。
 ```
 
-关键脚本：`tools/sqlcheck.mjs`（用真实 SQLite 跑 DDL 与 v1→v2 迁移，含「先建索引后清理必定失败」的反证用例）、`tools/parity/run.mjs`（对拍 + tsc 类型检查，覆盖 `common`/`model`/`service`）、`tools/check-resources.mjs`（文案↔代码双向一致、深浅色键对齐、`ColRole` 别名下标断言）、`tools/check-project-config.mjs`（工程配置 95 项）、`tools/check-api-usage.mjs`、`tools/check-encoding-fallback.mjs`、`tools/check-tooltip-geometry.mjs`、`tools/gen-icons.mjs`（图标唯一来源）。
+关键脚本：`tools/sqlcheck.mjs`（用真实 SQLite 跑 DDL 与 v1→v2 迁移，含「先建索引后清理必定失败」的反证用例）、`tools/parity/run.mjs`（对拍 + tsc 类型检查，覆盖 `common`/`model`/`service`）、`tools/check-resources.mjs`（文案↔代码双向一致、深浅色键对齐、`ColRole` 别名下标断言）、`tools/check-project-config.mjs`（工程配置 91 项）、`tools/check-api-usage.mjs`、`tools/check-encoding-fallback.mjs`、`tools/check-tooltip-geometry.mjs`、`tools/gen-icons.mjs`（图标唯一来源）。
 
-> **注意**：`tools/` 与 `docs/` 目前**不在 `BpRecorder/` 这个 git 仓库内**（仓库根是 `BpRecorder/`），因此对它们的改动不会被任何 commit 记录、也无法 `git diff` 审阅。这不影响使用，但建议尽快纳入版本控制（或至少纳入备份范围）。
+> **版本治理（v1.15 更正）**：`tools/` 与 `docs/` **已被工作区根仓库 `BP-recorder/` 跟踪**（根目录的 `*.md` 亦然）。工作区因此有两个 git 仓库：`BpRecorder/`（应用本体）与工作区根 `BP-recorder/`（文档 + 工具链），**两者必须分别提交**。此前「不在任何 git 仓库内」的说法已过时。
 
 ### 4.3 架构原则
 
@@ -975,7 +979,7 @@ docs/      // 自检报告、决策记录、运行与部署说明（含设备侧
 
 ### M6：打磨与验收（7%）
 - 空态/加载态/错误态补全；字符串与颜色资源化检查。
-- Hypium 单测：GradeService、StatsService、MedService（状态机全覆盖）、ReportService、ImportService（解析与判重）分支覆盖率 100%，Db CRUD 主路径覆盖。
+- Hypium 单测：GradeService、StatsService、MedService（状态机全覆盖）、ReportService、ImportService（判重与入库）、GenericImportService 与 LooseParse（外部来源识别与容错解析）分支覆盖率 100%，Db CRUD 主路径覆盖。
 - 性能验证（NFR-1/2/3）：用脚本批量灌入 4000 条血压 + 2 个药品 1 年打卡记录（约 1100 条）测试数据验证流畅度；90 天报告长图渲染 ≤2s。
 - **出口条件**：第 7 章全部清单通过，产出最终交付包。
 
@@ -1057,7 +1061,7 @@ docs/      // 自检报告、决策记录、运行与部署说明（含设备侧
 - [ ] 无网络权限声明（module.json5 中无 ohos.permission.INTERNET）
 - [ ] 字符串/颜色全部资源化，代码无中文硬编码
 - [ ] 分层依赖无反向引用
-- [ ] 单测通过：GradeService、StatsService、MedService、ReportService、ImportService 分支覆盖 100%
+- [ ] 单测通过：GradeService、StatsService、MedService、ReportService、ImportService、GenericImportService 分支覆盖 100%（**真机已跑通 75 例，见 docs/自检报告.md §28**）
 - [ ] 4000 条血压 + 1100 条打卡数据下：启动 ≤1.5s、列表滑动无卡顿、保存 ≤200ms
 
 ### CL-8 用药管理与提醒
@@ -1116,7 +1120,7 @@ docs/      // 自检报告、决策记录、运行与部署说明（含设备侧
 - [ ] **自家导出文件与其他来源文件判重键一致**：同一份数据无论从哪个入口导入都不会重复入库
 - [ ] 无时间列时测量时间统一记为 `00:00` 并在预览页明示（**不臆造**时间）；无法识别的脏行逐行报告原因、按行隔离、不中断整批导入
 
-> 上面这 6 条由 `tools/parity/harness.ts` 的 14 组用例承接（字符归一、日期多种写法、时间多种写法、日期时间合并、数值与血压组合值、表头别名 + 内容画像、无表头 + 单列血压 + kPa、日期时间合并列 / 无时间列、列序打乱 + 多余列、脏行逐行隔离、与自家导出格式互认、用药打卡外部写法、识别为用药计划时给出指引、手工改列后结果变化），当前 535 条断言全绿。纯 UI 文案类（如「已按 kPa 换算」的具体措辞）仍需真机目视确认。
+> 上面这 6 条由 `tools/parity/harness.ts` 的 14 组用例承接（字符归一、日期多种写法、时间多种写法、日期时间合并、数值与血压组合值、表头别名 + 内容画像、无表头 + 单列血压 + kPa、日期时间合并列 / 无时间列、列序打乱 + 多余列、脏行逐行隔离、与自家导出格式互认、用药打卡外部写法、识别为用药计划时给出指引、手工改列后结果变化），当前 556 条断言全绿。纯 UI 文案类（如「已按 kPa 换算」的具体措辞）仍需真机目视确认。
 
 ---
 
@@ -1170,12 +1174,13 @@ docs/      // 自检报告、决策记录、运行与部署说明（含设备侧
 | v1→v2 迁移在含脏数据的旧库上失败 | **应用无法启动**（非"约束没建成"） | 迁移严格按「先清理 → 后建索引 → 单事务」执行，建索引一律带 `IF NOT EXISTS` 保证可重复执行；`tools/sqlcheck.mjs` 用真实 SQLite 执行迁移，并含「不清理直接建索引必定失败」的反证用例 |
 | 调试签名过期导致 App 无法打开 | 数据不可访问 | 8.3 已说明重新签名流程；数据在应用沙箱内，重装同包名同签名不丢 |
 | 误触清空数据 | 数据丢失 | FR-7.2 输入"确认"防误触 + 导出先行建议 |
-| 代理提醒在部分设备上受运行时管控，`publishReminder` 返回 `1700001` | 系统级到点提醒失效 | 两条路径同时实现，运行时探测后自动回退本地通知；回退模式下另加「进入前台按自然日补发漏服通知」兜底；设置页明示能力边界。可用性需真机实测（V1） |
+| 代理提醒功能是否另受设备侧运行时管控**尚无真机定论**（权限本身安装即授予）；`publishReminder` 可能返回 `1700001` | 系统级到点提醒失效 | 两条路径同时实现，运行时探测后自动回退本地通知；v1.14 起把「请求通知授权」做成流程的一步，并如实显示「已登记提醒 N 条」，不允许静默失败；回退模式下另加「进入前台按自然日补发漏服通知」兜底；设置页明示能力边界。可用性需真机实测（V1） |
 | 系统省电策略杀死后台导致通知延迟 | 提醒不准时 | 设置页引导用户将 App 加入"受保护应用"/关闭电池优化；CL-8 要求息屏实测 |
 | 计划修改导致提醒与打卡记录错乱 | 数据不一致 | 打卡记录存快照（med_name/dosage），与计划解耦；预生成幂等规则见 3.1 |
 | componentSnapshot 对长滚动页出图截断 | 报告长图不完整 | 报告用离屏容器按内容高度一次性渲染，CL-9 验证完整性；M5 自检附截图 |
 | 系统打印界面不支持"另存为 PDF"（机型差异） | PDF 路径失效 | 长图为保底输出，报告三输出方式中长图与分享不依赖打印；真机实测写入 M5 自检报告 |
 | 导入脏数据（手工编辑过的 CSV）导致解析崩溃 | 数据损坏/闪退 | 解析层全量 try-catch 按行隔离，错误行只跳过不入库；CL-10 幂等与回滚用例强制验证 |
+| 计划过了 `end_date` 后，每日代理闹钟（`daysOfWeek` 无限重复、无结束日期参数）在用户**不再打开 App** 时仍会继续响 | 停药后仍每天收到提醒 | 短期：进入前台重建提醒时把 `end_date` 已过的计划自动停用并清理未来 pending（实现见《后续任务执行单》T7，**待裁决 D3**）；残余边界：用户从此不打开 App 时系统侧无法自清，属平台能力边界，已在设置页提醒方式行注明 |
 
 ---
 
