@@ -259,6 +259,12 @@ export namespace util {
    * 本项目用它做「严格解码失败即换编码」的判断，故必须存在于桩中。
    */
   export interface TextDecoderOptions { fatal?: boolean; ignoreBOM?: boolean }
+  /** 真实声明：api/@ohos.util.d.ts 的 util.TextEncoder（encodeInto 返回 Uint8Array） */
+  export class TextEncoder {
+    constructor(encoding?: string);
+    encodeInto(input: string): Uint8Array;
+    encodeIntoUint8Array(input: string, dest: Uint8Array): object;
+  }
   export class TextDecoder {
     static create(encoding?: string, options?: TextDecoderOptions): TextDecoder;
     decodeToString(input: Uint8Array, options?: DecodeToStringOptions): string;
