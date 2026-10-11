@@ -13,7 +13,7 @@ import { ImportService, MedImportDraft } from './src/service/ImportService';
 import { ReportService } from './src/service/ReportService';
 import { CsvVocab, ImportVocab } from './src/common/Vocab';
 import { CheckInAction, GradeLevel, GradeStandard, MedLogStatus, Period } from './src/model/Types';
-import { PrefKeys, RefBasis, ImportAliasRes, ImportKind, ImportUnit, MedLimits } from './src/common/Constants';
+import { PrefKeys, RefBasis, ImportAliasRes, ImportKind, ImportUnit, MedLimits , DbConst } from './src/common/Constants';
 import { LooseParse, BpPairValue } from './src/common/LooseParse';
 import {
   ColRole, GenericImportService, GenericBpPreview, Detection, MappingPlan, ROLE_COUNT
@@ -23,6 +23,8 @@ import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow
 import { BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
+import { BackupService } from './src/service/BackupService';
+import { BackupFile } from './src/model/Backup';
 import { ReminderVocab } from './src/common/Vocab';
 import { ReminderMode } from './src/model/Types';
 import { common } from '@kit.AbilityKit';
@@ -1598,6 +1600,48 @@ async function reviewScenarios(): Promise<void> {
     eq(guard.next(), -1, 'R12 页面销毁后不再接受新请求');
     eq(guard.isCurrent(second), false, 'R12 销毁后在途响应不得改视图');
     eq(guard.isDisposed(), true, 'R12 销毁状态可查询');
+  }
+
+  group('审查 R10·完整备份（结构 / 版本 / 逐字段校验 / 冲突预览）');
+  {
+    const bpRec: BpRecord = rec(ts(2026, 10, 11, 8, 0) + 45123, 120, 80, 70, 1);
+    const bkMeds: Medication[] = [med(1, '测试药1')];
+    const bkPlans: MedPlan[] = [plan(7, 1, ['07:15'], '2026-10-01', null, true)];
+    const bkLogs: MedLog[] = [mlog(ts(2026, 10, 11, 8, 0), MedLogStatus.TAKEN, ts(2026, 10, 11, 8, 5), 1)];
+    const file: BackupFile = BackupService.build([bpRec], bkMeds, bkPlans, bkLogs, '1.0.0', ts(2026, 10, 11, 12, 0));
+    eq(file.meta.formatVersion, 1, 'R10 备份带 formatVersion=1');
+    eq(file.meta.schemaVersion, DbConst.SCHEMA_VERSION, 'R10 meta 记录导出时 schema 版本');
+    eq(file.meta.counts.bp, 1, 'R10 meta 计数与实际条数一致');
+
+    const text: string = BackupService.serialize(file);
+    const parsed = BackupService.parse(text);
+    ok(parsed.file !== null, 'R10 自家序列化可被解析');
+    const pf = parsed.file as BackupFile;
+    eq(BackupService.validate(pf).length, 0, 'R10 自家备份逐字段校验通过');
+    eq(pf.logs[0].takenTime, ts(2026, 10, 11, 8, 5), 'R10 打卡时间（毫秒）往返一致');
+    eq(pf.bp[0].measureTime, bpRec.measureTime, 'R10 血压时间（毫秒）往返一致');
+    eq(pf.plans[0].timeSlots[0], '07:15', 'R10 计划时点与启停状态原样保留');
+
+    const badVer = BackupService.parse('{"meta":{"formatVersion":99,"schemaVersion":2}}');
+    eq(badVer.file, null, 'R10 不支持的格式版本必须拒绝');
+    eq(badVer.issues.length, 1, 'R10 版本不符给出明确原因');
+    const highSchema = BackupService.parse('{"meta":{"formatVersion":1,"schemaVersion":99}}');
+    eq(highSchema.file, null, 'R10 更高 schema 版本必须拒绝（提示升级应用）');
+    const notJson = BackupService.parse('这不是 JSON');
+    eq(notJson.file, null, 'R10 非 JSON 内容必须拒绝');
+
+    const bf = (BackupService.parse(text).file) as BackupFile;
+    bf.plans[0].medicationId = 999;
+    bf.bp[0].systolic = Number.NaN;
+    bf.logs[0].scheduledTime = 0;
+    const issues = BackupService.validate(bf);
+    ok(issues.length >= 3, 'R10 悬空引用 / NaN / 非法时间戳都被逐字段报出');
+
+    const prev = BackupService.preview(file, new Set<number>([1]), new Set<number>(),
+      new Set<string>(), new Set<string>());
+    eq(prev.overwriteCounts.meds, 1, 'R10 预览：已存在的药品计为「覆盖」');
+    eq(prev.addCounts.plans, 1, 'R10 预览：新计划计为「新增」');
+    eq(prev.restorable, true, 'R10 预览：无问题时允许恢复');
   }
 
   group('审查反例 R17（测试实例隔离）');
