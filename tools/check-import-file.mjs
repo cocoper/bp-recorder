@@ -28,7 +28,8 @@ const PROJECT_ROOT = resolve(HERE, '..');
 const PROJECT = join(PROJECT_ROOT, 'BpRecorder');
 const BUILD_OUT = join(HERE, 'parity', '.build', 'out');
 const STRING_JSON = join(PROJECT, 'entry', 'src', 'main', 'resources', 'base', 'element', 'string.json');
-const NODE_BIN = process.env.PARITY_NODE ?? '/Users/yang/.workbuddy/binaries/node/versions/22.22.2-3/bin/node';
+// Node 由 tools/toolchain.mjs 解析（审查 R16：不写死某台机器的路径）。
+const NODE_BIN = process.env.PARITY_NODE ?? process.execPath;
 
 const target = process.argv[2];
 if (target === undefined) {

@@ -19,6 +19,8 @@ import {
 } from './src/service/GenericImportService';
 import { BpRecord } from './src/model/BpRecord';
 import { Medication, MedLog, MedPlan, PlanExportRow } from './src/model/Med';
+import { BpDatabase } from './src/service/BpDatabase';
+import { common } from '@kit.AbilityKit';
 
 let passCount = 0;
 const failures: string[] = [];
@@ -1202,6 +1204,46 @@ group('外部来源：用户手工改列对应后结果随之变化');
     '手工指定后不再缺必需列');
 }
 
+// ═══════════════════ 审查反例迁移（R20.2）═══════════════════
+// 来源：《全面审查报告与修改要求-2026-10-11.md》19 个反例（docs/review-2026-10-11/repro.cjs）。
+// 迁入正式回归时保留业务断言含义；编号 Rxx-y 与报告、docs/审查整改执行记录.md 的映射表一一对应。
+async function reviewScenarios(): Promise<void> {
+  const ctxStub = {} as unknown as common.Context;
+
+  group('审查反例 R17（测试实例隔离）');
+  {
+    let prefixRejected = false;
+    try {
+      BpDatabase.createIsolated('bp_recorder.db');
+    } catch (err) {
+      prefixRejected = true;
+    }
+    ok(prefixRejected, 'R17 用生产库名创建测试实例必须被拒绝');
+
+    const iso: BpDatabase = BpDatabase.createIsolated('bp_recorder_unittest.parity.db');
+    ok(iso.isTestInstance(), 'R17 createIsolated 产出测试实例');
+    ok(iso !== BpDatabase.getInstance(), 'R17 测试实例不得是生产单例');
+
+    let switchRejected = false;
+    iso.attachStoreStub({ auditOnly: true });
+    try {
+      await iso.init(ctxStub, 'bp_recorder_unittest.other.db');
+    } catch (err) {
+      switchRejected = true;
+    }
+    ok(switchRejected, 'R17-a 已初始化实例切换库名必须被拒绝（不得静默复用连接）');
+
+    let clearGuarded = false;
+    try {
+      BpDatabase.getInstance().requireTestInstance('clearAll');
+    } catch (err) {
+      clearGuarded = true;
+    }
+    ok(clearGuarded, 'R17 生产实例上的 clearAll 身份核验必须拒绝');
+  }
+}
+
+function finish(): void {
 // ═══════════════════ 汇总 ═══════════════════
 const total = passCount + failures.length;
 process.stdout.write(`\n================ 离线校验结果 ================\n`);
@@ -1216,3 +1258,9 @@ if (failures.length > 0) {
 }
 process.stdout.write(`==============================================\n`);
 process.exit(failures.length === 0 ? 0 : 1);
+}
+
+reviewScenarios().then(() => finish()).catch((err) => {
+  failures.push(`[审查反例迁移] harness 异常：${String(err)}`);
+  finish();
+});

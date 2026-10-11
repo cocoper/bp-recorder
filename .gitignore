@@ -25,3 +25,9 @@ BpRecorder/build-profile.json5
 
 # 评审/复现的临时产物（其他会话在工作区生成的中间文件）
 docs/review-*/
+
+# 依赖（由 package-lock.json 还原，不入库）
+node_modules/
+
+# 本机工具链位置（tools/init-local-config.mjs 生成；含本机绝对路径）
+tools/toolchain.local.json

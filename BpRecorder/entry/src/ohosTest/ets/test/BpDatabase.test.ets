@@ -25,7 +25,21 @@ import { getTestAbilityContext } from '../testability/TestContext';
 const TEST_DB_NAME: string = 'bp_recorder_unittest.db';
 
 export default function bpDatabaseTest() {
-  const db: BpDatabase = BpDatabase.getInstance();
+  // 审查 R17：测试**不得**通过 getInstance() 拿生产单例（过去会因已初始化而复用生产连接）。
+  // 一律用 createIsolated(测试库名) 建独立实例；库名不是 bp_recorder_unittest 前缀会直接抛错。
+  let db: BpDatabase | null = null;
+  const requireDb = (): BpDatabase => {
+    const inst: BpDatabase | null = db;
+    if (inst === null) {
+      throw new Error('测试实例未初始化：beforeAll 失败时不应继续执行用例');
+    }
+    return inst;
+  };
+  const clearTestDb = async (): Promise<void> => {
+    const inst: BpDatabase = requireDb();
+    inst.requireTestInstance('clearAll');
+    await inst.clearAll();
+  };
   let context: common.Context | null = null;
 
   const draft = (sys: number, dia: number, hr: number | null, t: number): BpRecordDraft => ({
@@ -61,18 +75,25 @@ export default function bpDatabaseTest() {
       context = ctx;
       // 诊断（2026-10-08）：把 context 来源与真实错误码带进失败信息，
       // 便于区分「context 非法」与「别的原因」。
+      db = BpDatabase.createIsolated(TEST_DB_NAME);
       try {
-        await db.init(ctx, TEST_DB_NAME);
+        await requireDb().init(ctx, TEST_DB_NAME);
       } catch (err) {
         const be = err as BusinessError;
         const src: string = getTestAbilityContext() !== null ? 'TestAbility' : 'delegator';
         throw new Error(`db.init failed: code=${be.code}, msg=${be.message}, ctxSource=${src}`);
       }
-      await db.clearAll();
+      await clearTestDb();
     });
 
     afterAll(async () => {
-      await db.clearAll();
+      // 审查 R17：只有确实打开了测试库才允许清空/删除；先关连接再删库。
+      const inst: BpDatabase | null = db;
+      if (inst !== null && inst.isReady()) {
+        inst.requireTestInstance('afterAll 清空');
+        await inst.clearAll();
+        await inst.close();
+      }
       // 删除测试库文件，避免在设备上留下残留
       const ctx: common.Context | null = context;
       if (ctx !== null) {
@@ -91,98 +112,98 @@ export default function bpDatabaseTest() {
       const t1: number = DateUtils.now() - 3600000;
       const t2: number = DateUtils.now() - 7200000;
 
-      const id: number = await db.insertBp(draft(128, 82, 72, t1));
+      const id: number = await requireDb().insertBp(draft(128, 82, 72, t1));
       expect(id > 0).assertTrue();
 
-      const page = await db.queryBpPage(0, 20);
+      const page = await requireDb().queryBpPage(0, 20);
       expect(page.total).assertEqual(1);
       expect(page.items[0].systolic).assertEqual(128);
 
-      const loaded: BpRecord | null = await db.queryBpById(id);
+      const loaded: BpRecord | null = await requireDb().queryBpById(id);
       expect(loaded !== null).assertTrue();
       if (loaded === null) {
         return;
       }
       loaded.systolic = 135;
-      await db.updateBp(loaded);
-      const updated: BpRecord | null = await db.queryBpById(id);
+      await requireDb().updateBp(loaded);
+      const updated: BpRecord | null = await requireDb().queryBpById(id);
       expect(updated === null ? 0 : updated.systolic).assertEqual(135);
 
-      await db.insertBp(draft(140, 90, null, t2));
-      const between = await db.queryBpBetween(t2 - 1000, t2 + 1000);
+      await requireDb().insertBp(draft(140, 90, null, t2));
+      const between = await requireDb().queryBpBetween(t2 - 1000, t2 + 1000);
       expect(between.length).assertEqual(1);
 
-      await db.deleteBp(id);
-      const afterDelete = await db.queryBpPage(0, 20);
+      await requireDb().deleteBp(id);
+      const afterDelete = await requireDb().queryBpPage(0, 20);
       expect(afterDelete.total).assertEqual(1);
     });
 
     it('page_order_is_desc', 0, async () => {
-      await db.clearAll();
+      await clearTestDb();
       const base: number = DateUtils.now();
       for (let i = 0; i < 25; i++) {
-        await db.insertBp(draft(120 + i, 80, null, base - i * 60000));
+        await requireDb().insertBp(draft(120 + i, 80, null, base - i * 60000));
       }
-      const first = await db.queryBpPage(0, 20);
+      const first = await requireDb().queryBpPage(0, 20);
       expect(first.items.length).assertEqual(20);
       expect(first.hasMore).assertTrue();
       expect(first.items[0].systolic).assertEqual(120);
-      const second = await db.queryBpPage(20, 20);
+      const second = await requireDb().queryBpPage(20, 20);
       expect(second.items.length).assertEqual(5);
       expect(second.hasMore).assertFalse();
     });
 
     it('medication_plan_log_crud', 0, async () => {
-      await db.clearAll();
-      const medId: number = await db.insertMedication({ name: '缬沙坦', dosage: '1片/80mg', note: null }, true);
+      await clearTestDb();
+      const medId: number = await requireDb().insertMedication({ name: '缬沙坦', dosage: '1片/80mg', note: null }, true);
       const planDraft: MedPlanDraft = {
         medicationId: medId, timeSlots: ['07:30', '18:00'],
         startDate: DateUtils.formatDate(DateUtils.now()), endDate: null
       };
-      const planId: number = await db.upsertPlan(planDraft);
+      const planId: number = await requireDb().upsertPlan(planDraft);
       expect(planId > 0).assertTrue();
 
-      const plans: MedPlan[] = await db.queryActivePlans();
+      const plans: MedPlan[] = await requireDb().queryActivePlans();
       expect(plans.length).assertEqual(1);
       expect(plans[0].timeSlots.length).assertEqual(2);
 
       const today: number = DateUtils.now();
-      const drafts: MedLogDraft[] = MedService.pendingDrafts(plans, await db.queryMedications(), today, 7);
-      const inserted: number = await db.insertMissingLogs(drafts);
+      const drafts: MedLogDraft[] = MedService.pendingDrafts(plans, await requireDb().queryMedications(), today, 7);
+      const inserted: number = await requireDb().insertMissingLogs(drafts);
       expect(inserted).assertEqual(drafts.length);
 
       // 幂等：重复预生成不再新增（CL-8）
-      const again: number = await db.insertMissingLogs(drafts);
+      const again: number = await requireDb().insertMissingLogs(drafts);
       expect(again).assertEqual(0);
 
-      const logs: MedLog[] = await db.queryMedLogsOfDay(today);
+      const logs: MedLog[] = await requireDb().queryMedLogsOfDay(today);
       expect(logs.length > 0).assertTrue();
       const target: MedLog = logs[0];
-      await db.updateMedLogStatus(target.id, MedLogStatus.TAKEN, DateUtils.now(), null);
-      const after = await db.queryMedLog(target.medicationId, target.scheduledTime);
+      await requireDb().updateMedLogStatus(target.id, MedLogStatus.TAKEN, DateUtils.now(), null);
+      const after = await requireDb().queryMedLog(target.medicationId, target.scheduledTime);
       expect(after === null ? '' : `${after.status}`).assertEqual(`${MedLogStatus.TAKEN}`);
 
       // 停用计划不影响历史打卡
-      await db.deactivatePlan(planId);
-      expect((await db.queryActivePlans()).length).assertEqual(0);
-      expect((await db.queryMedLogsOfDay(today)).length > 0).assertTrue();
+      await requireDb().deactivatePlan(planId);
+      expect((await requireDb().queryActivePlans()).length).assertEqual(0);
+      expect((await requireDb().queryMedLogsOfDay(today)).length > 0).assertTrue();
     });
 
     it('mark_missed_overdue', 0, async () => {
-      await db.clearAll();
-      const medId: number = await db.insertMedication({ name: '二甲双胍', dosage: '1片', note: null }, true);
-      await db.upsertPlan({
+      await clearTestDb();
+      const medId: number = await requireDb().insertMedication({ name: '二甲双胍', dosage: '1片', note: null }, true);
+      await requireDb().upsertPlan({
         medicationId: medId, timeSlots: ['07:30'],
         startDate: DateUtils.formatDate(DateUtils.addDays(DateUtils.now(), -3)), endDate: null
       });
-      const plans: MedPlan[] = await db.queryActivePlans();
-      const meds: Medication[] = await db.queryMedications();
-      await db.insertMissingLogs(MedService.pendingDrafts(plans, meds, DateUtils.now(), 4));
+      const plans: MedPlan[] = await requireDb().queryActivePlans();
+      const meds: Medication[] = await requireDb().queryMedications();
+      await requireDb().insertMissingLogs(MedService.pendingDrafts(plans, meds, DateUtils.now(), 4));
 
       const now: number = DateUtils.now();
-      const marked: number = await db.markMissed(now);
+      const marked: number = await requireDb().markMissed(now);
       expect(marked > 0).assertTrue();
-      const logs: MedLog[] = await db.queryMedLogsBetween(0, Number.MAX_SAFE_INTEGER);
+      const logs: MedLog[] = await requireDb().queryMedLogsBetween(0, Number.MAX_SAFE_INTEGER);
       let missed: number = 0;
       for (let i = 0; i < logs.length; i++) {
         if (logs[i].status === MedLogStatus.MISSED) {
@@ -193,80 +214,80 @@ export default function bpDatabaseTest() {
     });
 
     it('transaction_rollback', 0, async () => {
-      await db.clearAll();
-      const before: number = await db.countBp();
+      await clearTestDb();
+      const before: number = await requireDb().countBp();
       let threw: boolean = false;
       try {
         // 事务中先成功插入一条，再抛错 → 整批回滚，不产生半批数据（FR-6.8）
-        await db.runInTransaction(async () => {
-          await db.insertBp(draft(130, 85, null, DateUtils.now()));
+        await requireDb().runInTransaction(async () => {
+          await requireDb().insertBp(draft(130, 85, null, DateUtils.now()));
           throw new Error('simulated failure');
         });
       } catch (err) {
         threw = true;
       }
       expect(threw).assertTrue();
-      expect(await db.countBp()).assertEqual(before);
+      expect(await requireDb().countBp()).assertEqual(before);
     });
 
     it('clear_all_removes_everything', 0, async () => {
-      await db.insertBp(draft(126, 80, 70, DateUtils.now()));
-      const medId: number = await db.insertMedication({ name: '阿司匹林', dosage: '1片', note: null }, true);
-      await db.upsertPlan({
+      await requireDb().insertBp(draft(126, 80, 70, DateUtils.now()));
+      const medId: number = await requireDb().insertMedication({ name: '阿司匹林', dosage: '1片', note: null }, true);
+      await requireDb().upsertPlan({
         medicationId: medId, timeSlots: ['12:00'],
         startDate: DateUtils.formatDate(DateUtils.now()), endDate: null
       });
-      await db.clearAll();
-      expect(await db.countBp()).assertEqual(0);
-      expect(await db.countMedLogs()).assertEqual(0);
-      expect((await db.queryMedications()).length).assertEqual(0);
-      expect((await db.queryPlans()).length).assertEqual(0);
+      await clearTestDb();
+      expect(await requireDb().countBp()).assertEqual(0);
+      expect(await requireDb().countMedLogs()).assertEqual(0);
+      expect((await requireDb().queryMedications()).length).assertEqual(0);
+      expect((await requireDb().queryPlans()).length).assertEqual(0);
     });
 
     // ── 以下三条用例对应 v1.3 审查意见的 P1-3 与 P1-4 ──
 
     it('unique_triple_index_enforced', 0, async () => {
-      await db.clearAll();
+      await clearTestDb();
       const t: number = DateUtils.now() - 1000;
-      await db.insertBp(draft(150, 95, null, t));
+      await requireDb().insertBp(draft(150, 95, null, t));
       let threw: boolean = false;
       try {
         // 同「测量时间 + 收缩压 + 舒张压」重复插入应被唯一索引拒绝（P1-4）
-        await db.insertBp(draft(150, 95, null, t));
+        await requireDb().insertBp(draft(150, 95, null, t));
       } catch (err) {
         threw = true;
       }
       expect(threw).assertTrue();
-      expect(await db.countBp()).assertEqual(1);
+      expect(await requireDb().countBp()).assertEqual(1);
     });
 
     it('exists_bp_triple_precheck', 0, async () => {
-      await db.clearAll();
+      await clearTestDb();
       const t: number = DateUtils.now() - 2000;
-      const id: number = await db.insertBp(draft(148, 92, null, t));
-      expect(await db.existsBpTriple(t, 148, 92, 0)).assertTrue();
+      const id: number = await requireDb().insertBp(draft(148, 92, null, t));
+      expect(await requireDb().existsBpTriple(t, 148, 92, 0)).assertTrue();
       // 编辑自身时应排除自己，否则会误判为重复
-      expect(await db.existsBpTriple(t, 148, 92, id)).assertFalse();
-      expect(await db.existsBpTriple(t, 148, 93, 0)).assertFalse();
+      expect(await requireDb().existsBpTriple(t, 148, 92, id)).assertFalse();
+      expect(await requireDb().existsBpTriple(t, 148, 93, 0)).assertFalse();
     });
 
     it('delete_future_pending_logs_only', 0, async () => {
-      await db.clearAll();
+      await clearTestDb();
       const now: number = DateUtils.now();
-      const medId: number = await db.insertMedication({ name: '测试药', dosage: '1片', note: null }, true);
+      const medId: number = await requireDb().insertMedication({ name: '测试药', dosage: '1片', note: null }, true);
       // 过去的待服：是当时真实存在的服药义务 → 必须保留（会在超时后派生为漏服）
-      await db.insertMedLogForImport(medId, '测试药', '1片', now - 3600000,
+      await requireDb().insertMedLogForImport(medId, '测试药', '1片', now - 3600000,
         MedLogStatus.PENDING, null, null);
       // 未来的待服：按旧计划预生成、尚未发生 → 计划变更后应被清理（P1-3）
-      await db.insertMedLogForImport(medId, '测试药', '1片', now + 3600000,
+      await requireDb().insertMedLogForImport(medId, '测试药', '1片', now + 3600000,
         MedLogStatus.PENDING, null, null);
       // 未来的已服：历史记录 → 永不删除
-      await db.insertMedLogForImport(medId, '测试药', '1片', now + 7200000,
+      await requireDb().insertMedLogForImport(medId, '测试药', '1片', now + 7200000,
         MedLogStatus.TAKEN, now, null);
 
-      const removed: number = await db.deleteFuturePendingLogs(medId, now);
+      const removed: number = await requireDb().deleteFuturePendingLogs(medId, now);
       expect(removed).assertEqual(1);
-      const rest: MedLog[] = await db.queryMedLogsBetween(0, Number.MAX_SAFE_INTEGER);
+      const rest: MedLog[] = await requireDb().queryMedLogsBetween(0, Number.MAX_SAFE_INTEGER);
       expect(rest.length).assertEqual(2);
       let pendingPast: number = 0;
       let takenFuture: number = 0;
@@ -283,10 +304,10 @@ export default function bpDatabaseTest() {
     });
 
     it('period_roundtrip', 0, async () => {
-      await db.clearAll();
+      await clearTestDb();
       const t: number = DateUtils.atMinutesOfDay(DateUtils.now(), 7 * 60 + 30);
-      const id: number = await db.insertBp(draft(122, 78, 66, t));
-      const loaded: BpRecord | null = await db.queryBpById(id);
+      const id: number = await requireDb().insertBp(draft(122, 78, 66, t));
+      const loaded: BpRecord | null = await requireDb().queryBpById(id);
       expect(loaded === null ? '' : `${loaded.period}`).assertEqual(`${Period.MORNING}`);
     });
   });

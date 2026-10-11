@@ -86,10 +86,17 @@ const DDL: string[] = [
  * - 事务封装支持嵌套调用（内层复用外层事务），防止 SQLite 不支持嵌套事务导致报错。
  */
 export class BpDatabase {
+  /** 测试库名必须以此开头（审查 R17：指定库名不等于隔离，测试构造器只接受严格测试前缀） */
+  static readonly TEST_DB_PREFIX: string = 'bp_recorder_unittest';
+
   private static instance: BpDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;
   private initPromise: Promise<void> | null = null;
   private inTransaction: boolean = false;
+  /** 实际已连接的库名（'' = 未连接）。任何「换库名」请求都以此为准做拒绝判断。 */
+  private openedStoreName: string = '';
+  /** 是否由 createIsolated 创建的测试实例（生产单例为 false）。 */
+  private testInstance: boolean = false;
 
   static getInstance(): BpDatabase {
     if (BpDatabase.instance === null) {
@@ -98,9 +105,63 @@ export class BpDatabase {
     return BpDatabase.instance;
   }
 
+  /**
+   * **仅供测试**：创建一个与生产单例完全无关的独立实例（审查 R17）。
+   * - 不注册为单例，绝不复用生产连接；
+   * - 库名必须以 `bp_recorder_unittest` 开头，否则直接抛错，避免测试误清用户库。
+   */
+  static createIsolated(storeName: string): BpDatabase {
+    if (!storeName.startsWith(BpDatabase.TEST_DB_PREFIX)) {
+      throw new Error(`测试实例的库名必须以 ${BpDatabase.TEST_DB_PREFIX} 开头，收到：${storeName}`);
+    }
+    const db: BpDatabase = new BpDatabase();
+    db.testInstance = true;
+    return db;
+  }
+
   /** 是否已就绪（页面可据此决定是否显示「数据库初始化失败」提示） */
   isReady(): boolean {
     return this.store !== null;
+  }
+
+  /** 实际已连接的库名（未连接时为空串）——测试收尾与「核验实际连接身份」都读它 */
+  storeName(): string {
+    return this.openedStoreName;
+  }
+
+  /** 是否测试实例（由 createIsolated 创建） */
+  isTestInstance(): boolean {
+    return this.testInstance;
+  }
+
+  /** 任何清空/删除前核验身份（审查 R17）：只允许在测试实例 + 测试库上执行 */
+  requireTestInstance(action: string): void {
+    if (!this.testInstance || !this.openedStoreName.startsWith(BpDatabase.TEST_DB_PREFIX)) {
+      throw new Error(`${action} 只允许在测试实例与测试库上执行（当前实例：${this.openedStoreName === '' ? '未连接' : this.openedStoreName}）`);
+    }
+  }
+
+  /**
+   * **仅供离线回归/测试**：注入一个 RdbStore 形状的替身，用于验证连接身份与事务控制流，
+   * 不打开任何真实数据库。生产代码不得调用。
+   */
+  attachStoreStub(stub: object): void {
+    this.store = stub as relationalStore.RdbStore;
+    if (this.openedStoreName === '') {
+      this.openedStoreName = '(stub)';
+    }
+  }
+
+  /** 关闭连接并清空初始化缓存（测试收尾用；生产单例不调用） */
+  async close(): Promise<void> {
+    const current: relationalStore.RdbStore | null = this.store;
+    this.store = null;
+    this.initPromise = null;
+    this.openedStoreName = '';
+    this.inTransaction = false;
+    if (current !== null) {
+      await current.close();
+    }
   }
 
   /**
@@ -114,6 +175,11 @@ export class BpDatabase {
    */
   async init(context: common.Context, storeName: string = DbConst.NAME): Promise<void> {
     if (this.store !== null) {
+      // 审查 R17：已初始化实例再指定另一个库名时，过去会静默复用旧连接 —— 这里必须拒绝。
+      // 注意这里**不**给「库名未知」留后门：连接身份说不清时宁可拒绝，也不静默复用。
+      if (storeName !== this.openedStoreName) {
+        throw new Error(`该实例已连接 ${this.openedStoreName}，不能改连 ${storeName}；测试请用 BpDatabase.createIsolated(库名)`);
+      }
       return;
     }
     if (this.initPromise === null) {
@@ -133,7 +199,8 @@ export class BpDatabase {
     }
     await BpDatabase.migrate(store);
     this.store = store;
-    Logger.info(TAG, `database ready, schemaVersion=${DbConst.SCHEMA_VERSION}`);
+    this.openedStoreName = storeName;
+    Logger.info(TAG, `database ready, storeName=${storeName}, schemaVersion=${DbConst.SCHEMA_VERSION}`);
   }
 
   /** 版本化迁移：以 PRAGMA user_version 为基准，整体在一个事务内完成 */

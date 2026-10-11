@@ -1,0 +1,18 @@
+{
+  "name": "bp-recorder",
+  "version": "0.0.0",
+  "private": true,
+  "description": "血压助手（HarmonyOS / ArkTS）—— 应用源码、策划与部署文档、离线校验链与开发工具",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "check": "node tools/check-all.mjs",
+    "parity": "node tools/parity/run.mjs",
+    "sqlcheck": "node tools/sqlcheck.mjs",
+    "review-regression": "node docs/review-2026-10-11/repro.cjs"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

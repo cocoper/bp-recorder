@@ -18,9 +18,10 @@
 // 用法：node tools/parity/run.mjs
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { cpSync, mkdirSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { NODE_BIN, resolveTsc } from '../toolchain.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(HERE, '..', '..');
@@ -29,34 +30,39 @@ const BUILD = join(HERE, '.build');
 const SRC = join(BUILD, 'src');
 const NODE_MODULES = join(BUILD, 'node_modules');
 
-const NODE_BIN = process.env.PARITY_NODE ?? '/Users/yang/.workbuddy/binaries/node/versions/22.22.2-3/bin/node';
-const TSC = '/Users/yang/.workbuddy/binaries/node/workspace/node_modules/typescript/bin/tsc';
+// Node 与 TypeScript 一律由 tools/toolchain.mjs 解析（默认当前 Node + 仓库内 devDependency），
+// 不再写死某台机器的绝对路径（审查 R16）。
+const TSC = resolveTsc();
 
-const SOURCES = [
-  ['common/Constants.ets', 'common/Constants.ts'],
-  ['common/DateUtils.ets', 'common/DateUtils.ts'],
-  ['common/Csv.ets', 'common/Csv.ts'],
-  ['common/Errors.ets', 'common/Errors.ts'],
-  ['common/Logger.ets', 'common/Logger.ts'],
-  ['common/LooseParse.ets', 'common/LooseParse.ts'],
-  ['common/ResUtils.ets', 'common/ResUtils.ts'],
-  ['common/Vocab.ets', 'common/Vocab.ts'],
-  ['model/Types.ets', 'model/Types.ts'],
-  ['model/BpRecord.ets', 'model/BpRecord.ts'],
-  ['model/Med.ets', 'model/Med.ts'],
-  ['service/BpValidator.ets', 'service/BpValidator.ts'],
-  ['service/GradeService.ets', 'service/GradeService.ts'],
-  ['service/StatsService.ets', 'service/StatsService.ts'],
-  ['service/MedService.ets', 'service/MedService.ts'],
-  ['service/BpDatabase.ets', 'service/BpDatabase.ts'],
-  ['service/ExportService.ets', 'service/ExportService.ts'],
-  ['service/ImportService.ets', 'service/ImportService.ts'],
-  ['service/GenericImportService.ets', 'service/GenericImportService.ts'],
-  ['service/ReportService.ets', 'service/ReportService.ts'],
-  ['service/FileService.ets', 'service/FileService.ts'],
-  ['service/ShareService.ets', 'service/ShareService.ts'],
-  ['service/ReminderService.ets', 'service/ReminderService.ts']
-];
+const GROUPS = ['common', 'model', 'service'];
+
+/**
+ * 明确排除、并逐个声明理由（审查 R16：不能夸大全覆盖）。
+ * common / model / service 下的新增源码会被自动纳入类型检查；确实不能纳入的必须在此登记。
+ */
+const EXCLUDED = new Map([
+  // ['common/Xxx.ets', '依赖 ArkUI 组件，本机无法转译；改由 src/ohosTest 覆盖']
+]);
+
+function discoverSources() {
+  const list = [];
+  for (const group of GROUPS) {
+    const dir = join(ETS_ROOT, group);
+    if (!existsSync(dir)) {
+      console.error(`缺少源码目录：${dir}`);
+      process.exit(2);
+    }
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith('.ets')) continue;
+      const rel = `${group}/${f}`;
+      if (EXCLUDED.has(rel)) continue;
+      list.push([rel, rel.replace(/\.ets$/, '.ts')]);
+    }
+  }
+  return list;
+}
+
+const SOURCES = discoverSources();
 
 /**
  * HarmonyOS Kit 类型桩。仅用于本机离线类型检查与运行，不参与真实工程构建。
@@ -106,6 +112,8 @@ export namespace relationalStore {
     beginTransaction(): Promise<void>;
     commit(): Promise<void>;
     rollBack(): Promise<void>;
+    close(): Promise<void>;
+    readonly version: number;
   }
   export function getRdbStore(context: object, config: StoreConfig): Promise<RdbStore>;
 }
@@ -396,6 +404,8 @@ function step(msg) {
 rmSync(BUILD, { recursive: true, force: true });
 mkdirSync(SRC, { recursive: true });
 
+step(`源码覆盖：自动发现 ${SOURCES.length} 个文件（${GROUPS.join('/')}），显式排除 ${EXCLUDED.size} 个`);
+for (const [rel, why] of EXCLUDED) process.stdout.write(`  排除 ${rel}：${why}\n`);
 step('复制真实 .ets 源码为 .ts');
 for (const [from, to] of SOURCES) {
   const srcPath = join(ETS_ROOT, from);
