@@ -11,6 +11,7 @@ import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { ReminderVocab } from '../common/Vocab';
 import { MedService, SlotGroup } from './MedService';
+import { BpDatabase } from './BpDatabase';   // 仅用于 syncFromDatabase：不反向依赖，无环
 
 const TAG: string = 'ReminderService';
 
@@ -224,6 +225,23 @@ export class ReminderService {
    *
    * @param force true 时忽略签名，强制重建（设置页「重新检测」使用）
    */
+  /**
+   * 按**当前全量生效计划**协调系统提醒（审查 R02）。
+   *
+   * 归档 / 停用 / 恢复药品后必须走这里，而不是 `cancelAll()`：
+   * - 先原子改数据库（由调用方完成），再读**最新全量**生效计划；
+   * - 期望集合与系统实际提醒做协调，只有「所有计划都无需提醒」或清空数据时期望集合才为空；
+   * - 单药停用**不允许**实现成最终的全量取消（B 的提醒必须完整保留）。
+   */
+  static async syncFromDatabase(context: common.UIAbilityContext, db: BpDatabase,
+    vocab: ReminderVocab, now: number): Promise<ReminderCapability> {
+    const plans: MedPlan[] = await db.queryActivePlans();
+    const meds: Medication[] = await db.queryMedications();
+    const capability: ReminderCapability = await ReminderService.rebuildAll(context, plans, meds, vocab, now, true);
+    Logger.info(TAG, `reminders synced from database: activePlans=${plans.length}, mode=${capability.mode}`);
+    return capability;
+  }
+
   static async rebuildAll(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
     vocab: ReminderVocab, todayTs: number, force: boolean = false): Promise<ReminderCapability> {
     let capability: ReminderCapability = await ReminderService.probe(context, force, vocab);

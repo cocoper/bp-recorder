@@ -264,13 +264,13 @@ struct MedPlanEditPage {
   private async doDeactivate(): Promise<void> {
     try {
       const db: BpDatabase = BpDatabase.getInstance();
-      if (this.planId > 0) {
-        await db.deactivatePlan(this.planId);
-      }
-      await db.setMedicationActive(this.medicationId, false);
-      // 停用后不再存在应服义务，清掉尚未到期的待服记录（P1-3）；历史记录保留
-      await db.deleteFuturePendingLogs(this.medicationId, DateUtils.now());
-      await ReminderService.cancelAll();
+      // 审查 R02：停用走统一领域命令（档案停用 + 计划停用 + 清未来待服，一个事务），
+      // 然后按**最新全量生效计划**协调提醒 —— 过去这里直接 cancelAll()，
+      // 结果是把其他药品的提醒也一起取消了。
+      await db.archiveMedication(this.medicationId, DateUtils.now());
+      const capability = await ReminderService.syncFromDatabase(this.context(), db,
+        VocabFactory.reminder(this.context()), DateUtils.now());
+      Logger.info(TAG, `plan deactivated: med=${this.medicationId}, reminder mode=${capability.mode}`);
       this.toast($r('app.string.toast_med_archived'));
       router.back();
     } catch (err) {

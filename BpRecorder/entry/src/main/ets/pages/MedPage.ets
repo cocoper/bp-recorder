@@ -182,6 +182,11 @@ struct MedPage {
       // 审查 R07：归档走统一领域命令 —— 档案停用、计划停用、未来待服清理在**一个事务**内完成
       // （过去是三次独立写，中途失败会留下「药品已停用但计划仍生效」的中间态）。
       await db.archiveMedication(row.medication.id, DateUtils.now());
+      // 审查 R02：归档后必须按最新全量生效计划重新协调提醒（过去这里什么都不做，
+      // 已归档药品的提醒会一直留在系统里）。
+      const capability = await ReminderService.syncFromDatabase(this.context(), db,
+        VocabFactory.reminder(this.context()), DateUtils.now());
+      Logger.info(TAG, `archived med=${row.medication.id}, reminder mode=${capability.mode}`);
       this.toast($r('app.string.toast_med_archived'));
       await this.load();
     } catch (err) {

@@ -12,7 +12,7 @@ import { ImportService, MedImportDraft } from './src/service/ImportService';
 import { ReportService } from './src/service/ReportService';
 import { CsvVocab, ImportVocab } from './src/common/Vocab';
 import { CheckInAction, GradeLevel, GradeStandard, MedLogStatus, Period } from './src/model/Types';
-import { RefBasis, ImportAliasRes, ImportKind, ImportUnit, MedLimits } from './src/common/Constants';
+import { PrefKeys, RefBasis, ImportAliasRes, ImportKind, ImportUnit, MedLimits } from './src/common/Constants';
 import { LooseParse, BpPairValue } from './src/common/LooseParse';
 import {
   ColRole, GenericImportService, GenericBpPreview, Detection, MappingPlan, ROLE_COUNT
@@ -21,8 +21,13 @@ import { BpRecord } from './src/model/BpRecord';
 import { Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
 import { BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
+import { ReminderService } from './src/service/ReminderService';
+import { ReminderVocab } from './src/common/Vocab';
+import { ReminderMode } from './src/model/Types';
 import { common } from '@kit.AbilityKit';
-import { relationalStore } from '@kit.ArkData';
+import { preferences, relationalStore } from '@kit.ArkData';
+import { reminderAgentManager } from '@kit.BackgroundTasksKit';
+import { notificationManager } from '@kit.NotificationKit';
 
 let passCount = 0;
 const failures: string[] = [];
@@ -1273,6 +1278,75 @@ async function reviewScenarios(): Promise<void> {
     };
     eq(MedLifecycleService.obligations([ancient], medsR01, ts(2026, 10, 11, 12, 0)).length, 38,
       'R01 回补上限：200 天未打开也只补 30 天 + 未来 7 天 = 38 条，不倒造多年漏服');
+  }
+
+  group('审查反例 R02（归档/停用后按全量集合协调提醒）');
+  {
+    // 提醒代理 / 通知 / preferences 全部内存桩（与审查反例 repro.cjs 同款），不触碰设备与用户数据
+    const agent = reminderAgentManager as unknown as Record<string, unknown>;
+    const notif = notificationManager as unknown as Record<string, unknown>;
+    const prefs = preferences as unknown as Record<string, unknown>;
+    const memory = new Map<string, string>();
+    memory.set(PrefKeys.REMINDER_MODE, ReminderMode.AGENT);
+    prefs['getPreferencesSync'] = () => ({
+      getSync: (k: string, d: unknown) => (memory.has(k) ? memory.get(k) : d),
+      putSync: (k: string, v: string) => {
+        memory.set(k, v);
+      },
+      flush: async () => {}
+    });
+    agent['ReminderType'] = { REMINDER_TYPE_ALARM: 1, REMINDER_TYPE_TIMER: 0 };
+    agent['ActionButtonType'] = { ACTION_BUTTON_TYPE_CLOSE: 0 };
+    notif['SlotType'] = { SOCIAL_COMMUNICATION: 0 };
+    notif['ContentType'] = { NOTIFICATION_CONTENT_BASIC_TEXT: 0 };
+    notif['isNotificationEnabled'] = async () => true;
+    const alarms: Array<Record<string, unknown>> = [];
+    agent['getAllValidReminders'] = async () => alarms;
+    agent['cancelAllReminders'] = async () => {
+      alarms.length = 0;
+    };
+    agent['publishReminder'] = async (req: Record<string, unknown>) => {
+      alarms.push(req);
+      return alarms.length;
+    };
+    // 只统计真实业务提醒（ALARM）；探测用的 10 秒 TIMER 不算
+    const business = (): Array<Record<string, unknown>> => alarms.filter((a) => a['reminderType'] === 1);
+
+    const ctx = {
+      abilityInfo: { bundleName: 'audit.memory.only' },
+      resourceManager: { getStringSync: (id: string) => id }
+    } as unknown as common.UIAbilityContext;
+    const vocab: ReminderVocab = {
+      title: '服药提醒', separator: '、', expiredContent: '已过计划时间',
+      snoozeContent: '稍后提醒', actionClose: '知道了'
+    };
+    const now = ts(2026, 10, 11, 7, 0);
+    const medsAB: Medication[] = [med(1, '测试药A'), med(2, '测试药B')];
+    const planA: MedPlan = plan(21, 1, ['08:00'], '2026-10-01', null, true);
+    const planB: MedPlan = plan(22, 2, ['18:00'], '2026-10-01', null, true);
+
+    await ReminderService.rebuildAll(ctx, [planA, planB], medsAB, vocab, now, false);
+    eq(business().length, 2, 'R02 基线：A(08:00)/B(18:00) 各一条业务提醒');
+
+    // 归档 A：数据库侧由领域命令原子完成，之后按**最新全量生效计划**（只剩 B）协调提醒
+    const onlyB = { queryActivePlans: async () => [planB], queryMedications: async () => medsAB } as unknown as BpDatabase;
+    await ReminderService.syncFromDatabase(ctx, onlyB, vocab, now);
+    eq(business().length, 1, 'R02 归档 A 后：系统里只剩 B 的提醒（不是全量取消）');
+    eq(business()[0]['hour'], 18, 'R02 B 的提醒完整保留（18:00）');
+
+    // 同一时点合并：A、B 都是 08:00 时只登记一条，通知内容含两个药名（不能固化成「今天的药品集合」）
+    const planA2: MedPlan = plan(21, 1, ['08:00'], '2026-10-01', null, true);
+    const planB2: MedPlan = plan(22, 2, ['08:00'], '2026-10-01', null, true);
+    await ReminderService.rebuildAll(ctx, [planA2, planB2], medsAB, vocab, now, false);
+    eq(business().length, 1, 'R02 同一时点只登记一条提醒');
+    const mergedContent: string = String(business()[0]['content'] ?? '');
+    ok(mergedContent.indexOf('测试药A') >= 0 && mergedContent.indexOf('测试药B') >= 0,
+      'R02 同时点通知内容含两个药名');
+
+    // 停用最后一药：期望集合为空，此时才允许系统里一条不剩
+    const none = { queryActivePlans: async () => [], queryMedications: async () => medsAB } as unknown as BpDatabase;
+    await ReminderService.syncFromDatabase(ctx, none, vocab, now);
+    eq(business().length, 0, 'R02 停用最后一药后才允许空集合');
   }
 
   group('审查反例 R17（测试实例隔离）');
