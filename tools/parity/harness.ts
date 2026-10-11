@@ -1719,6 +1719,126 @@ async function reviewScenarios(): Promise<void> {
     eq(store.bp.size, 1, 'R10 重复恢复后总量不变');
     eq(store.logs.size, 1, 'R10 重复恢复后打卡总量不变');
 
+    // ── 端到端往返（审查 R10 验收：空库恢复逐字段一致 / 任意顺序等价 / 重复恢复幂等）──
+    const rich: BackupFile = BackupService.build(
+      [rec(ts(2026, 10, 11, 8, 0) + 45123, 120, 80, 70, 1),
+       rec(ts(2026, 10, 11, 8, 0) + 60456, 118, 79, null, 2)],
+      [med(1, '测试药1'), med(2, '测试药2', false)],
+      [plan(7, 1, ['07:15', '19:30'], '2026-10-01', null, true),
+       plan(8, 2, ['12:00'], '2026-09-01', '2026-09-30', false)],
+      [mlog(ts(2026, 10, 11, 7, 15), MedLogStatus.TAKEN, ts(2026, 10, 11, 7, 20), 1),
+       mlog(ts(2026, 10, 11, 19, 30), MedLogStatus.PENDING, null, 2),
+       mlog(ts(2026, 9, 20, 12, 0), MedLogStatus.MISSED, null, 3)],
+      '1.0.0', ts(2026, 10, 11, 12, 0));
+    const richText: string = BackupService.serialize(rich);
+    const richParsed = BackupService.parse(richText);
+    ok(richParsed.file !== null, 'R10 端到端：自家备份可解析');
+    const richFile = richParsed.file as BackupFile;
+    eq(BackupService.validate(richFile).length, 0, 'R10 端到端：逐字段校验通过');
+
+    function existingLogKeysOf(file: BackupFile): Set<string> {
+      const keys: Set<string> = new Set<string>();
+      for (const l of file.logs) {
+        keys.add(`${l.medicationId}_${l.scheduledTime}`);
+      }
+      return keys;
+    }
+    function existingBpKeysOf(file: BackupFile): Set<string> {
+      const keys: Set<string> = new Set<string>();
+      for (const b of file.bp) {
+        keys.add(`${b.measureTime}_${b.systolic}_${b.diastolic}`);
+      }
+      return keys;
+    }
+
+    function snapshotOf(target: Record<string, Map<string, unknown>>): string {
+      const parts: string[] = [];
+      const keys: string[] = ['meds', 'plans', 'logs', 'bp'];
+      for (let i = 0; i < keys.length; i++) {
+        const m = target[keys[i]] as Map<string, unknown>;
+        const inner: string[] = [];
+        const ks: string[] = Array.from(m.keys()).sort();
+        for (let j = 0; j < ks.length; j++) {
+          inner.push(`${ks[j]}=${JSON.stringify(m.get(ks[j]))}`);
+        }
+        parts.push(`${keys[i]}[${inner.join('|')}]`);
+      }
+      return parts.join(';');
+    }
+
+    function freshTarget(): Record<string, Map<string, unknown>> {
+      return {
+        meds: new Map<string, unknown>(), plans: new Map<string, unknown>(),
+        logs: new Map<string, unknown>(), bp: new Map<string, unknown>()
+      };
+    }
+    let restoreCalls = 0;
+    const makeTarget = (t: Record<string, Map<string, unknown>>): BackupTarget => ({
+      runInTransaction: async (work: (tx: TxSession) => Promise<void>): Promise<void> => {
+        await work({ store: null } as unknown as TxSession);
+      },
+      restoreMedication: async (m: BackupMed): Promise<void> => {
+        restoreCalls++;
+        (t.meds as Map<string, unknown>).set(`${m.id}`, {
+          name: m.name, dosage: m.dosage, note: m.note, isActive: m.isActive
+        });
+      },
+      restorePlan: async (pl: BackupPlan): Promise<void> => {
+        restoreCalls++;
+        (t.plans as Map<string, unknown>).set(`${pl.id}`, {
+          medicationId: pl.medicationId, timeSlots: pl.timeSlots.join(','), startDate: pl.startDate,
+          endDate: pl.endDate, isActive: pl.isActive, effectiveFrom: pl.effectiveFrom
+        });
+      },
+      restoreMedLog: async (l: BackupLog): Promise<void> => {
+        restoreCalls++;
+        (t.logs as Map<string, unknown>).set(`${l.medicationId}_${l.scheduledTime}`, {
+          medName: l.medName, dosage: l.dosage, status: `${l.status}`, takenTime: l.takenTime
+        });
+      },
+      restoreBp: async (b: BackupBp): Promise<void> => {
+        restoreCalls++;
+        (t.bp as Map<string, unknown>).set(`${b.measureTime}_${b.systolic}_${b.diastolic}`, {
+          heartRate: b.heartRate, period: b.period, note: b.note
+        });
+      }
+    });
+
+    const targetA = freshTarget();
+    const resA = await BackupService.restore(makeTarget(targetA), richFile, noneN, noneN, noneS, noneS);
+    eq(resA.added.meds, 2, 'R10 空库恢复：药品 2 条');
+    eq(resA.added.plans, 2, 'R10 空库恢复：计划 2 条');
+    eq(resA.added.logs, 3, 'R10 空库恢复：打卡 3 条');
+    eq(resA.added.bp, 2, 'R10 空库恢复：血压 2 条');
+    eq(resA.overwritten.meds + resA.overwritten.bp, 0, 'R10 空库恢复：没有覆盖项');
+    const stateA: string = snapshotOf(targetA);
+
+    // 逐字段一致：与源数据比对（不是「插入成功」）
+    eq((targetA.bp as Map<string, unknown>).size, 2, 'R10 恢复后血压条数与源一致');
+    const logKey = `1_${ts(2026, 10, 11, 7, 15)}`;
+    const logJson: string = JSON.stringify((targetA.logs as Map<string, unknown>).get(logKey));
+    ok(logJson.indexOf('"takenTime":' + ts(2026, 10, 11, 7, 20)) >= 0, 'R10 恢复后打卡时间逐字段一致');
+    ok(logJson.indexOf('"status":"taken"') >= 0, 'R10 恢复后状态逐字段一致');
+    const bpKey2 = `${ts(2026, 10, 11, 8, 0) + 60456}_118_79`;
+    ok((targetA.bp as Map<string, unknown>).has(bpKey2), 'R10 同分钟第二条血压未被合并');
+
+    // 任意顺序等价：把文件数组倒序后恢复，最终状态必须完全一致
+    const reversed: BackupFile = {
+      meta: richFile.meta, bp: richFile.bp.slice().reverse(), meds: richFile.meds.slice().reverse(),
+      plans: richFile.plans.slice().reverse(), logs: richFile.logs.slice().reverse()
+    };
+    const targetB = freshTarget();
+    await BackupService.restore(makeTarget(targetB), reversed, noneN, noneN, noneS, noneS);
+    eq(snapshotOf(targetB), stateA, 'R10 任意文件顺序产生同等业务状态');
+
+    // 重复恢复幂等：第二次全部走覆盖，最终状态不变
+    const resSecond = await BackupService.restore(makeTarget(targetA), richFile,
+      new Set<number>([1, 2]), new Set<number>([7, 8]),
+      existingLogKeysOf(richFile), existingBpKeysOf(richFile));
+    eq(resSecond.added.bp + resSecond.added.meds + resSecond.added.plans + resSecond.added.logs, 0,
+      'R10 重复恢复不新增任何记录');
+    eq(snapshotOf(targetA), stateA, 'R10 重复恢复后状态不变（幂等）');
+
     const brokenFile = (BackupService.parse(text).file) as BackupFile;
     brokenFile.logs[0].medicationId = 999;
     brokenFile.logs[0].medName = '';
