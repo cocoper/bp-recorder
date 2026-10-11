@@ -6,7 +6,7 @@ import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { VocabFactory } from '../common/Vocab';
 import { Medication, MedicationDraft, MedPlan, MedPlanDraft } from '../model/Med';
-import { BpDatabase } from '../service/BpDatabase';
+import { BpDatabase, SaveMedicationPlanResult, TxSession } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
 import { LabeledInput } from '../components/LabeledInput';
@@ -24,6 +24,10 @@ interface MedPlanEditParams {
 struct MedPlanEditPage {
   @State private medicationId: number = 0;
   @State private planId: number = 0;
+  /** 审查 R07.3：保存期间禁止重入（快速双击只产生一版计划） */
+  private saving: boolean = false;
+  /** 审查 R07.4：编辑模式下读取失败时表单是空的，不允许覆盖保存 */
+  private loadFailed: boolean = false;
   @State private name: string = '';
   @State private dosage: string = '';
   @State private note: string = '';
@@ -87,6 +91,10 @@ struct MedPlanEditPage {
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `load plan failed: code=${e.code}, message=${e.message}`);
+      // 编辑模式下读不到真实档案：标记失败，save() 会拒绝提交（避免空表单覆盖真实数据）
+      if (this.medicationId > 0) {
+        this.loadFailed = true;
+      }
     }
   }
 
@@ -168,60 +176,59 @@ struct MedPlanEditPage {
     });
   }
 
+  /**
+   * 保存：走 BpDatabase.saveMedicationAndPlan 领域命令（审查 R07）——
+   * 药品、计划、受影响待服、生成结果在**一个事务**里提交；提醒在提交后单独协调。
+   */
   private async save(): Promise<void> {
+    if (this.saving) {
+      return;
+    }
     if (!this.isValid()) {
       return;
     }
+    if (this.medicationId > 0 && this.loadFailed) {
+      this.toast($r('app.string.error_db_read'));
+      return;
+    }
+    this.saving = true;
     const db: BpDatabase = BpDatabase.getInstance();
     const now: number = DateUtils.now();
     try {
-      const medDraft: MedicationDraft = {
-        name: this.name.trim(),
-        dosage: this.dosage.trim(),
-        note: this.note.trim().length === 0 ? null : this.note.trim()
-      };
-
-      if (this.medicationId > 0) {
-        const existing: Medication = {
-          id: this.medicationId,
-          name: medDraft.name,
-          dosage: medDraft.dosage,
-          note: medDraft.note,
-          isActive: true,
-          createdAt: 0,
-          updatedAt: now
-        };
-        await db.updateMedication(existing);
-      } else {
-        this.medicationId = await db.insertMedication(medDraft, true);
-      }
-
-      // 计划规范化：去重 + 升序（避免重复时间点导致提醒冲突，CL-8）
-      const planDraft: MedPlanDraft = {
+      const noteText: string = this.note.trim();
+      const result: SaveMedicationPlanResult = await db.saveMedicationAndPlan({
         medicationId: this.medicationId,
-        timeSlots: MedService.normalizeSlots(this.slots),
-        startDate: this.startDate,
-        endDate: this.longTerm ? null : this.endDate
-      };
-      // 旧计划置为停用而非删除，历史打卡不受影响（FR-8.3）
-      this.planId = await db.upsertPlan(planDraft);
+        medication: {
+          name: this.name.trim(),
+          dosage: this.dosage.trim(),
+          note: noteText.length === 0 ? null : noteText
+        },
+        plan: {
+          medicationId: this.medicationId,
+          timeSlots: MedService.normalizeSlots(this.slots),
+          startDate: this.startDate,
+          endDate: this.longTerm ? null : this.endDate
+        },
+        regenerateFrom: now,
+        preGenDays: MedLimits.PRE_GEN_DAYS
+      }, async (tx: TxSession, medicationId: number): Promise<number> => {
+        const plans: MedPlan[] = await db.queryActivePlans();
+        const meds: Medication[] = await db.queryMedications();
+        return db.insertMissingLogs(MedService.pendingDrafts(plans, meds, now, MedLimits.PRE_GEN_DAYS), tx);
+      });
 
-      // 计划已变更：先清掉按旧计划预生成、且尚未到期的待服记录，
-      // 再按新计划重新生成，避免「计划已改、旧提醒与旧卡片还在」（v1.3 审查意见 P1-3）
-      const cleared: number = await db.deleteFuturePendingLogs(this.medicationId, now);
-      Logger.info(TAG, `plan changed, cleared ${cleared} stale future pending logs`);
+      // 只有提交成功后才更新页面状态（失败时页面仍指向旧对象）
+      this.medicationId = result.medicationId;
+      this.planId = result.planId;
+      Logger.info(TAG, `plan saved: med=${result.medicationId}, plan=${result.planId}, cleared=${result.clearedPending}, generated=${result.generatedPending}`);
 
-      // 计划变更后：重建提醒（含合并同一时间点）并重新滚动预生成打卡记录。
-      // v1.14：代理提醒必须先获得通知授权，否则 publishReminder 报 1700001「Notification is not enabled」，
-      // 结果是「设了提醒却永远不响」。用户刚设完提醒时间，正是申请授权的时机 —— 先确保授权再重建。
+      // 提交之后再协调系统提醒：数据库与通知系统没有共同事务边界（报告规则 6 / R07）
       const notifyGranted: boolean = await ReminderService.ensureNotificationEnabled(this.context());
       const plans: MedPlan[] = await db.queryActivePlans();
       const meds: Medication[] = await db.queryMedications();
       await ReminderService.rebuildAll(this.context(), plans, meds, VocabFactory.reminder(this.context()), now, true);
-      await db.insertMissingLogs(MedService.pendingDrafts(plans, meds, now, MedLimits.PRE_GEN_DAYS));
 
       if (this.slots.length > 0 && !notifyGranted) {
-        // 提醒是这个页面的核心承诺：没拿到授权时必须说清楚，不能只提示「已保存」
         this.toast($r('app.string.toast_reminder_need_notification'));
       } else {
         this.toast($r('app.string.toast_med_saved'));
@@ -231,6 +238,8 @@ struct MedPlanEditPage {
       const e = err as BusinessError;
       Logger.error(TAG, `save plan failed: code=${e.code}, message=${e.message}`);
       this.toast($r('app.string.error_db_write'));
+    } finally {
+      this.saving = false;
     }
   }
 

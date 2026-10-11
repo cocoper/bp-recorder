@@ -1326,6 +1326,78 @@ async function reviewScenarios(): Promise<void> {
     await db2.runInTransaction(async (tx: TxSession) => {});
     eq(calls, 2, 'R06-b begin 失败后下一独立事务仍必须调用 begin（队列未被堵死）');
   }
+
+  group('审查反例 R07（保存药品+计划的领域命令）');
+  {
+    // 桩模块是空对象：先补一个最小的 RdbPredicates（只提供签名，不做筛选）
+    const arkRel = (relationalStore as unknown as Record<string, unknown>);
+    if (arkRel['RdbPredicates'] === undefined) {
+      arkRel['RdbPredicates'] = class {
+        constructor(table: string) {}
+        private self(): unknown {
+          return this;
+        }
+        equalTo(field: string, value: unknown): unknown { return this.self(); }
+        notEqualTo(field: string, value: unknown): unknown { return this.self(); }
+        greaterThan(field: string, value: unknown): unknown { return this.self(); }
+        greaterThanOrEqualTo(field: string, value: unknown): unknown { return this.self(); }
+        lessThan(field: string, value: unknown): unknown { return this.self(); }
+        lessThanOrEqualTo(field: string, value: unknown): unknown { return this.self(); }
+        between(field: string, low: unknown, high: unknown): unknown { return this.self(); }
+        in(field: string, value: unknown): unknown { return this.self(); }
+        orderByAsc(field: string): unknown { return this.self(); }
+        orderByDesc(field: string): unknown { return this.self(); }
+        limitAs(value: number): unknown { return this.self(); }
+        offsetAs(value: number): unknown { return this.self(); }
+      };
+    }
+    const db: BpDatabase = new BpDatabase();
+    let begins = 0;
+    let commits = 0;
+    const updates: Array<Record<string, unknown>> = [];
+    let deletes = 0;
+    db.attachStoreStub({
+      beginTransaction: async () => {
+        begins++;
+      },
+      commit: async () => {
+        commits++;
+      },
+      rollBack: async () => {},
+      insert: async (table: string, values: unknown) => (table === 'med_plan' ? 7 : 1),
+      update: async (values: Record<string, unknown>, predicates: unknown) => {
+        updates.push(values);
+        return 1;
+      },
+      delete: async (predicates: unknown) => {
+        deletes++;
+        return 0;
+      },
+      executeSql: async (sql: string, args?: unknown) => {},
+      querySql: async (sql: string) => {
+        throw new Error('unused');
+      }
+    });
+    const result = await db.saveMedicationAndPlan({
+      medicationId: 5,
+      medication: { name: '测试药5', dosage: '2片', note: null },
+      plan: { medicationId: 5, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null },
+      regenerateFrom: 0,
+      preGenDays: 7
+    }, async (tx: TxSession, medicationId: number) => 3);
+    eq(begins, 1, 'R07 保存药品+计划只开一个事务');
+    eq(commits, 1, 'R07 提交一次');
+    eq(result.medicationId, 5, 'R07 既有药品保存后仍返回同一 id');
+    eq(result.generatedPending, 3, 'R07 生成结果原样带回');
+    let reactivated = false;
+    for (const u of updates) {
+      if (u['is_active'] === 1 && u['name'] === '测试药5') {
+        reactivated = true;
+      }
+    }
+    ok(reactivated, 'R07 保存时显式写入 is_active=1（归档药品可复活）');
+    ok(deletes > 0, 'R07 同事务内清理按旧计划生成的未来待服');
+  }
 }
 
 function finish(): void {

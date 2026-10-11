@@ -179,12 +179,9 @@ struct MedPage {
   private async doArchive(row: MedListRow): Promise<void> {
     try {
       const db: BpDatabase = BpDatabase.getInstance();
-      await db.setMedicationActive(row.medication.id, false);
-      if (row.plan !== null) {
-        await db.deactivatePlan(row.plan.id);
-      }
-      // 归档后不再产生应服义务，清掉尚未到期的待服记录（P1-3）；历史打卡记录保留
-      await db.deleteFuturePendingLogs(row.medication.id, DateUtils.now());
+      // 审查 R07：归档走统一领域命令 —— 档案停用、计划停用、未来待服清理在**一个事务**内完成
+      // （过去是三次独立写，中途失败会留下「药品已停用但计划仍生效」的中间态）。
+      await db.archiveMedication(row.medication.id, DateUtils.now());
       this.toast($r('app.string.toast_med_archived'));
       await this.load();
     } catch (err) {

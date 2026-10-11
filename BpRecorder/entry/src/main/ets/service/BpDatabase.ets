@@ -94,6 +94,24 @@ export interface TxSession {
   readonly store: relationalStore.RdbStore;
 }
 
+/** 「保存药品档案 + 计划版本」领域命令（审查 R07）：一次事务内改药品、计划、受影响 pending 与生成结果 */
+export interface SaveMedicationPlanCommand {
+  /** 0 = 新建药品；>0 = 既有药品（会被显式置为启用） */
+  medicationId: number;
+  medication: MedicationDraft;
+  plan: MedPlanDraft;
+  /** 重新生成待服的基准时刻（由调用方传入，便于测试固定时钟） */
+  regenerateFrom: number;
+  preGenDays: number;
+}
+
+export interface SaveMedicationPlanResult {
+  medicationId: number;
+  planId: number;
+  clearedPending: number;
+  generatedPending: number;
+}
+
 export class BpDatabase {
   /** 测试库名必须以此开头（审查 R17：指定库名不等于隔离，测试构造器只接受严格测试前缀） */
   static readonly TEST_DB_PREFIX: string = 'bp_recorder_unittest';
@@ -1110,6 +1128,71 @@ export class BpDatabase {
       rs.close();
     }
     return out;
+  }
+
+  // ─────────────────── 领域命令（审查 R07）───────────────────
+
+  /**
+   * 保存「药品档案 + 计划版本」：**一个事务**内完成药品写入/启用、旧计划停用、新计划写入、
+   * 清理按旧计划生成且尚未到期的待服、并按新计划重新生成待服。
+   * 步骤：调用方通过 `generate` 传回生成逻辑（由页面/服务决定口径，避免 DB 层依赖业务规则）。
+   * 提醒的登记**不在**事务内：DB 无共同事务边界，提交后再单独协调（报告规则 6）。
+   */
+  async saveMedicationAndPlan(cmd: SaveMedicationPlanCommand,
+    generate: (tx: TxSession, medicationId: number) => Promise<number>): Promise<SaveMedicationPlanResult> {
+    let medicationId: number = 0;
+    let planId: number = 0;
+    let cleared: number = 0;
+    let generated: number = 0;
+    await this.runInTransaction(async (tx: TxSession) => {
+      if (cmd.medicationId > 0) {
+        medicationId = await this.updateMedicationIn(tx, cmd.medicationId, cmd.medication, true);
+      } else {
+        medicationId = await this.insertMedication(cmd.medication, true, tx);
+      }
+      const plan: MedPlanDraft = {
+        medicationId: medicationId,
+        timeSlots: cmd.plan.timeSlots,
+        startDate: cmd.plan.startDate,
+        endDate: cmd.plan.endDate
+      };
+      planId = await this.upsertPlanIn(tx, plan);
+      cleared = await this.deleteFuturePendingLogs(medicationId, cmd.regenerateFrom, tx);
+      generated = await generate(tx, medicationId);
+    });
+    return {
+      medicationId: medicationId,
+      planId: planId,
+      clearedPending: cleared,
+      generatedPending: generated
+    };
+  }
+
+  /** 更新药品档案并**显式**设置启用位（过去 updateMedication 不写 is_active，归档药品永远救不回来） */
+  private async updateMedicationIn(tx: TxSession, id: number, draft: MedicationDraft, active: boolean): Promise<number> {
+    const values: relationalStore.ValuesBucket = {
+      'name': draft.name,
+      'dosage': draft.dosage,
+      'note': draft.note,
+      'is_active': active ? 1 : 0,
+      'updated_at': DateUtils.now()
+    };
+    const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_MED);
+    predicates.equalTo('id', id);
+    const affected: number = await this.write(tx, (store: relationalStore.RdbStore) => store.update(values, predicates));
+    return affected > 0 ? id : 0;
+  }
+
+  /**
+   * 归档药品：一个事务内停用档案、停用其计划、清理未来待服。
+   * 提醒的协调由调用方在提交后单独做（审查 R02：不能实现成「全量取消」）。
+   */
+  async archiveMedication(medicationId: number, now: number): Promise<void> {
+    await this.runInTransaction(async (tx: TxSession) => {
+      await this.setMedicationActive(medicationId, false, tx);
+      await this.deactivatePlansOf(medicationId, tx);
+      await this.deleteFuturePendingLogs(medicationId, now, tx);
+    });
   }
 
   // ───────────────────────── 清空 ─────────────────────────

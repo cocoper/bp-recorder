@@ -3,12 +3,13 @@ import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { BpDatabase } from '../../../main/ets/service/BpDatabase';
+import { BpDatabase, SaveMedicationPlanResult, TxSession } from '../../../main/ets/service/BpDatabase';
 import { MedService } from '../../../main/ets/service/MedService';
 import { Medication, MedLog, MedLogDraft, MedPlan, MedPlanDraft } from '../../../main/ets/model/Med';
 import { BpRecord, BpRecordDraft } from '../../../main/ets/model/BpRecord';
 import { MedLogStatus, Period } from '../../../main/ets/model/Types';
 import { DateUtils } from '../../../main/ets/common/DateUtils';
+import { MedLimits } from '../../../main/ets/common/Constants';
 import { getTestAbilityContext } from '../testability/TestContext';
 
 /**
@@ -301,6 +302,57 @@ export default function bpDatabaseTest() {
       }
       expect(pendingPast).assertEqual(1);
       expect(takenFuture).assertEqual(1);
+    });
+
+    // 审查 R07：归档药品通过「保存服药计划」恢复使用时必须真正复活（is_active 显式写回），
+    // 且药品/计划/待服在同一事务内提交。真实数据库验证，不使用任何桩。
+    it('plan_save_reactivates_archived_medication', 0, async () => {
+      await clearTestDb();
+      const now: number = DateUtils.now();
+      const medId: number = await requireDb().insertMedication({ name: '测试药复活', dosage: '1片', note: null }, true);
+      await requireDb().upsertPlan({
+        medicationId: medId,
+        timeSlots: ['08:00'],
+        startDate: DateUtils.formatDate(now),
+        endDate: null
+      });
+
+      await requireDb().archiveMedication(medId, now);
+      const afterArchive: Medication[] = await requireDb().queryMedications();
+      let archivedActive: boolean = true;
+      for (let i = 0; i < afterArchive.length; i++) {
+        if (afterArchive[i].id === medId) {
+          archivedActive = afterArchive[i].isActive;
+        }
+      }
+      expect(archivedActive).assertFalse();
+
+      const result: SaveMedicationPlanResult = await requireDb().saveMedicationAndPlan({
+        medicationId: medId,
+        medication: { name: '测试药复活', dosage: '2片', note: null },
+        plan: { medicationId: medId, timeSlots: ['09:00'], startDate: DateUtils.formatDate(now), endDate: null },
+        regenerateFrom: now,
+        preGenDays: MedLimits.PRE_GEN_DAYS
+      }, async (tx: TxSession, id: number): Promise<number> => {
+        const plans: MedPlan[] = await requireDb().queryActivePlans();
+        const meds: Medication[] = await requireDb().queryMedications();
+        return requireDb().insertMissingLogs(MedService.pendingDrafts(plans, meds, now, MedLimits.PRE_GEN_DAYS), tx);
+      });
+
+      expect(result.medicationId).assertEqual(medId);
+      expect(result.generatedPending > 0).assertTrue();
+
+      const after: Medication[] = await requireDb().queryMedications();
+      let revived: boolean = false;
+      let dosage: string = '';
+      for (let i = 0; i < after.length; i++) {
+        if (after[i].id === medId) {
+          revived = after[i].isActive;
+          dosage = after[i].dosage;
+        }
+      }
+      expect(revived).assertTrue();
+      expect(dosage).assertEqual('2片');
     });
 
     it('period_roundtrip', 0, async () => {
