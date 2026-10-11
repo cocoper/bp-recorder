@@ -21,7 +21,8 @@ const STEPS = [
   ['check-api-usage（API 使用扫描）', 'tools/check-api-usage.mjs'],
   ['check-encoding-fallback（编码回落）', 'tools/check-encoding-fallback.mjs'],
   ['check-tooltip-geometry（气泡几何）', 'tools/check-tooltip-geometry.mjs'],
-  ['check-version（版本与产物一致性）', 'tools/check-version.mjs']
+  ['check-version（版本与产物一致性）', 'tools/check-version.mjs'],
+  ['check-isolation（隔离不变量）', 'tools/check-isolation.mjs']
 ];
 
 if (!skipReview) {

@@ -234,8 +234,11 @@ if (!inst.ok || /failed to install/i.test(out)) {
   console.error('\n✗ 安装失败。');
   if (/9568332|9568322/.test(out)) {
     console.error('  这是**签名不一致**：设备上已装的旧版本用了不同的签名材料。');
-    console.error(`  若可以丢弃旧数据：先执行 \`${HDC.split('/').pop()} -t ${target.id} uninstall com.bp.recorder\`，再重跑本命令。`);
-    console.error('  若想保留数据：改用 DevEco 的 Run 按钮（IDE 会处理覆盖安装）。');
+    // 审查 R20.1：绝不建议卸载生产包（那是用户的真实健康数据）
+    console.error('  禁止卸载用户生产安装（com.bp.recorder）—— 里面是真实健康数据。');
+    console.error('  破坏性验收请走隔离流程：node tools/make-audit-variant.mjs --apply');
+    console.error('  切到审计包名后重装，即可在隔离应用上做卸载/清空类验证（见 docs/隔离验收流程.md）。');
+    console.error('  想保留数据：改用 DevEco 的 Run 按钮（IDE 会处理覆盖安装）。');
   }
   process.exit(2);
 }
