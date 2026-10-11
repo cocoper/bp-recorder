@@ -1987,6 +1987,28 @@ async function reviewScenarios(): Promise<void> {
       `缬沙坦,1片,3,07:15;19:30,2026-10-01,`;
     eq(ImportService.parsePlanTable(Csv.parse(mismatch), VOCAB, new Set<string>()).errors.length, 1,
       'R13 次数与时点数量不符时报错');
+
+    // R14/R13：用药与计划导入同样拒绝结构错误行、并复用文本长度上限
+    const medBroken = ImportService.parseMedTable(
+      Csv.parse('2026-10-11,08:00,测试药1,1片,taken,,"unfinished'), VOCAB, new Set<string>(),
+      new Map<string, number>(), undefined, new Set<string>());
+    eq(medBroken.drafts.length, 0, 'R14 用药导入拒绝未闭合引号的行');
+    eq(medBroken.errors.length, 1, 'R14 用药导入报 1 条结构错误');
+
+    const planBroken = ImportService.parsePlanTable(
+      Csv.parse('测试药1,1片,1,07:15,2026-10-01,,"unfinished'), VOCAB, new Set<string>());
+    eq(planBroken.drafts.length, 0, 'R14 计划导入拒绝未闭合引号的行');
+    eq(planBroken.errors.length, 1, 'R14 计划导入报 1 条结构错误');
+
+    let longName: string = '';
+    for (let i = 0; i < 40; i++) {
+      longName += '名';
+    }
+    const longNamePv = ImportService.parseMedTable(
+      Csv.parse(`2026-10-11,08:00,${longName},1片,taken,,`), VOCAB, new Set<string>(),
+      new Map<string, number>(), undefined, new Set<string>());
+    eq(longNamePv.drafts.length, 0, 'R13 用药导入拒绝超长药品名');
+    eq(longNamePv.errors.length, 1, 'R13 超长药品名报 1 条错误');
   }
 
   group('导入提交侧等价（预览承诺 == 实际写入）');

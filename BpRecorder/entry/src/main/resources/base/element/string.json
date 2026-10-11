@@ -509,6 +509,14 @@
       "value": "药品名称为空"
     },
     {
+      "name": "err_imp_med_name_too_long",
+      "value": "药品名过长"
+    },
+    {
+      "name": "err_imp_dosage_too_long",
+      "value": "剂量文字过长"
+    },
+    {
       "name": "err_imp_med_ambiguous",
       "value": "药品名对应多个档案，无法确定身份：请补充「药品ID」列，或先在档案里改名区分"
     },

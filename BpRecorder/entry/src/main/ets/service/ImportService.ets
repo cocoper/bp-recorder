@@ -401,8 +401,19 @@ export class ImportService {
     const totalRows: number = data.length - start;
 
     for (let i = start; i < data.length; i++) {
-      const lineNo: number = i + 1;
+      const lineNo: number = Csv.physicalLineOf(i);
       const row: string[] = data[i];
+
+      // 审查 R14：用药导入同样拒绝结构错误行（此前只有血压导入做了这一步）
+      const structIssue = Csv.issueAt(i);
+      if (structIssue !== null) {
+        errors.push({
+          lineNo: structIssue.physicalLine,
+          reason: $r('app.string.err_imp_csv_broken'),
+          detail: structIssue.kind
+        });
+        continue;
+      }
 
       if (row.length < 5) {
         errors.push({
@@ -443,6 +454,18 @@ export class ImportService {
         errors.push({ lineNo: lineNo, reason: $r('app.string.err_imp_med_name_required'), detail: '' });
         continue;
       }
+      // 审查 R13：用药导入复用与录入同源的文本长度上限（过去只查「非空」）
+      if (medName.length > MedLimits.NAME_MAX_LEN) {
+        errors.push({ lineNo: lineNo, reason: $r('app.string.err_imp_med_name_too_long'),
+          detail: `${medName.length}` });
+        continue;
+      }
+      const dosageText: string = Csv.cell(row, 3);
+      if (dosageText.length > MedLimits.DOSAGE_MAX_LEN) {
+        errors.push({ lineNo: lineNo, reason: $r('app.string.err_imp_dosage_too_long'),
+          detail: `${dosageText.length}` });
+        continue;
+      }
 
       const statusText: string = Csv.cell(row, 4);
       const status: MedLogStatus | null = ImportService.mapStatusText(statusText, vocab);
@@ -480,6 +503,11 @@ export class ImportService {
 
       const dosage: string = Csv.cell(row, 3);
       const noteText: string = Csv.cell(row, 6);
+      // 审查 R13：用药导入的备注长度上限与录入一致
+      if (noteText.length > MedLimits.NOTE_MAX_LEN) {
+        errors.push({ lineNo: lineNo, reason: $r('app.string.err_note_too_long'), detail: `${noteText.length}` });
+        continue;
+      }
       const note: string | null = noteText.length === 0 ? null : noteText;
 
       // 审查 R10-c：文件带稳定药品 ID 时，身份**只按 ID 判定** ——
@@ -634,8 +662,19 @@ export class ImportService {
     const totalRows: number = data.length - start;
 
     for (let i = start; i < data.length; i++) {
-      const lineNo: number = i + 1;
+      const lineNo: number = Csv.physicalLineOf(i);
       const row: string[] = data[i];
+
+      // 审查 R14：计划导入同样拒绝结构错误行
+      const structIssue = Csv.issueAt(i);
+      if (structIssue !== null) {
+        errors.push({
+          lineNo: structIssue.physicalLine,
+          reason: $r('app.string.err_imp_csv_broken'),
+          detail: structIssue.kind
+        });
+        continue;
+      }
 
       if (row.length < 5) {
         errors.push({
