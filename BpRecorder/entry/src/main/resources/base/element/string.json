@@ -1535,6 +1535,10 @@
     {
       "name": "toast_cleared",
       "value": "数据已清空"
+    },
+    {
+      "name": "err_future_time",
+      "value": "测量时间不能晚于当前时间"
     }
   ]
 }

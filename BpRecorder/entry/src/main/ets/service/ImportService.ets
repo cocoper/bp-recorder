@@ -209,6 +209,17 @@ export class ImportService {
         continue;
       }
 
+      // 审查 R13：未来时间上界与备注长度沿用录入页的同一套契约（now+60s 容忍、备注 ≤100 字）
+      const nowRef: number = DateUtils.now();
+      if (measureTime > nowRef + 60 * 1000) {
+        errors.push({
+          lineNo: lineNo,
+          reason: $r('app.string.err_future_time'),
+          detail: `${dateStr} ${timeStr}`.trim()
+        });
+        continue;
+      }
+
       const hrText: string = Csv.cell(row, 4);
       const heartRate: number | null = hrText.length === 0 ? null : BpValidator.parsePositiveInt(hrText);
 
@@ -217,6 +228,14 @@ export class ImportService {
       const period: Period = periodFromFile === null ? DateUtils.periodOf(measureTime) : periodFromFile;
 
       const noteText: string = Csv.cell(row, 6);
+      if (noteText.length > MedLimits.NOTE_MAX_LEN) {
+        errors.push({
+          lineNo: lineNo,
+          reason: $r('app.string.err_note_too_long'),
+          detail: `${noteText.length}`
+        });
+        continue;
+      }
       const note: string | null = noteText.length === 0 ? null : noteText;
 
       const key: string = ImportService.bpKey(measureTime, systolic, diastolic);

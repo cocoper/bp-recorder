@@ -846,7 +846,18 @@ export class GenericImportService {
       if (hrCol >= 0) {
         const hrRaw: string = Csv.cell(row, hrCol);
         if (hrRaw.length > 0) {
-          hrText = GenericImportService.intText(hrRaw);
+          // 审查 R13：非空但解析不出数值的心率必须报行错误 —— 过去静默变成空串（等同「未填写」），
+          // 用户以为数据进来了，实际心率被悄悄丢掉。
+          const hrValue: number | null = LooseParse.parseIntLoose(hrRaw);
+          if (hrValue === null) {
+            errors.push({
+              lineNo: lineNo,
+              reason: $r('app.string.err_hr_invalid'),
+              detail: hrRaw
+            });
+            continue;
+          }
+          hrText = `${Math.round(hrValue)}`;
         }
       }
 

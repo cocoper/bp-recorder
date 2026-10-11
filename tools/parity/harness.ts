@@ -1483,6 +1483,36 @@ async function reviewScenarios(): Promise<void> {
     eq(legacyPv.drafts[0].takenTime, null, 'R09 不再伪造 +2h+1ms 当真实服药时刻');
   }
 
+  group('审查反例 R13（导入校验与录入一致）');
+  {
+    const futurePv = ImportService.parseBpTable([['2099-10-11', '08:00', '120', '80', '70', '', '']],
+      VOCAB, new Set<string>());
+    eq(futurePv.drafts.length, 0, 'R13-a 未来日期的血压不得入库');
+    eq(futurePv.errors.length, 1, 'R13-a 未来日期报 1 条行错误');
+
+    let longNote: string = '';
+    for (let i = 0; i < 101; i++) {
+      longNote += 'x';
+    }
+    const longPv = ImportService.parseBpTable([['2026-10-11', '08:00', '120', '80', '70', '', longNote]],
+      VOCAB, new Set<string>());
+    eq(longPv.drafts.length, 0, 'R13-a 超长备注不得入库');
+
+    const roleIndex: number[] = [];
+    for (let i = 0; i < ROLE_COUNT; i++) {
+      roleIndex.push(-1);
+    }
+    roleIndex[ColRole.DATE] = 0;
+    roleIndex[ColRole.TIME] = 1;
+    roleIndex[ColRole.SYSTOLIC] = 2;
+    roleIndex[ColRole.DIASTOLIC] = 3;
+    roleIndex[ColRole.HEART_RATE] = 4;
+    const gp = GenericImportService.parseBp([['2026-10-11', '08:00', '120', '80', 'abc']], VOCAB,
+      { hasHeader: false, roleIndex: roleIndex, unit: 'mmHg', unitScale: 1 }, new Set<string>());
+    eq(gp.drafts.length, 0, 'R13-b 显式非法心率不得静默变成空值');
+    eq(gp.errors.length, 1, 'R13-b 非法心率报 1 条行错误');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;
