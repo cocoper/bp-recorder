@@ -5,6 +5,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from '../common/Logger';
 import { DateUtils } from '../common/DateUtils';
 import { ShareConst } from '../common/Constants';
+import { Csv } from '../common/Csv';
 
 const TAG: string = 'FileService';
 
@@ -88,9 +89,24 @@ export class FileService {
       if (size <= 0) {
         return '';
       }
+      // 审查 R14.3：读前按容量契约拒绝，避免一次性分配巨大缓冲（可恢复位置拒绝，不做部分解析）
+      if (size > Csv.MAX_BYTES) {
+        throw new Error(`文件过大：${size} 字节，超过上限 ${Csv.MAX_BYTES}（${Math.floor(Csv.MAX_BYTES / 1024 / 1024)} MiB）`);
+      }
       const buffer: ArrayBuffer = new ArrayBuffer(size);
-      const readLength: number = fileIo.readSync(file.fd, buffer);
-      const bytes: Uint8Array = new Uint8Array(buffer, 0, readLength);
+      // 审查 R14.4：循环读到完整字节数或明确 EOF；零进展视为截断，直接报错而不是返回半份数据
+      let total: number = 0;
+      while (total < size) {
+        const n: number = fileIo.readSync(file.fd, buffer, { offset: total, length: size - total });
+        if (n <= 0) {
+          break;
+        }
+        total += n;
+      }
+      if (total < size) {
+        throw new Error(`读取不完整：${total}/${size} 字节`);
+      }
+      const bytes: Uint8Array = new Uint8Array(buffer, 0, total);
       return FileService.decodeAdaptive(bytes);
     } finally {
       fileIo.closeSync(file);
@@ -141,10 +157,23 @@ export class FileService {
 
   /** 写入文本到指定 URI（picker 授权的一次性 URI，无需额外权限） */
   static async writeText(uri: string, text: string): Promise<void> {
+    // 审查 R14.4：统一编码成字节后按字节数校验写入量，短写继续写，零进展报错
+    const encoded: Uint8Array = new util.TextEncoder().encodeInto(text);
     const file: fileIo.File = fileIo.openSync(uri,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
-      fileIo.writeSync(file.fd, text);
+      let written: number = 0;
+      while (written < encoded.length) {
+        const n: number = fileIo.writeSync(file.fd, encoded.buffer,
+          { offset: written, length: encoded.length - written });
+        if (n <= 0) {
+          throw new Error(`写入无进展：${written}/${encoded.length} 字节`);
+        }
+        written += n;
+      }
+      if (written !== encoded.length) {
+        throw new Error(`写入不完整：${written}/${encoded.length} 字节`);
+      }
     } finally {
       fileIo.closeSync(file);
     }
