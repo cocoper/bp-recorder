@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { router } from '@kit.ArkUI';
+import { display, router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GradeColor, GradeText, PeriodText, ReportKind } from '../common/Constants';
 import { DateUtils } from '../common/DateUtils';
@@ -34,6 +34,10 @@ struct ReportPage {
   private guard: RequestGuard = new RequestGuard();  @State private kind: string = ReportKind.WEEK;
   @State private rangeLabel: string = '';
   @State private report: ReportData | null = null;
+
+  /** 出图容器实测高度（vp）：用于出图预算（审查 R15.4） */
+  private captureHeightVp: number = 0;
+
   @State private busy: boolean = false;
 
   private range: DateRange = { start: 0, end: 0, label: '' };
@@ -148,6 +152,38 @@ struct ReportPage {
     }
   }
 
+  /** 出图显式像素宽（审查 R15.3）：1080px 换算成 vp，不随屏幕密度/用户缩放漂移 */
+  private captureWidthVp(): number {
+    try {
+      const d: number = display.getDefaultDisplaySync().densityPixels;
+      return ShareService.captureWidthVp(d);
+    } catch (err) {
+      return 360;   // 兜底：3x 密度下 1080px
+    }
+  }
+
+  private deviceDensity(): number {
+    try {
+      return display.getDefaultDisplaySync().densityPixels;
+    } catch (err) {
+      return 3;
+    }
+  }
+
+  /**
+   * 出图预算（审查 R15.4）：超过 8192px 高时**明确提示需要几张**，
+   * 而不是把长文缩到不可读或悄悄截断异常清单。
+   */
+  private withinCaptureBudget(): boolean {
+    const plan = ShareService.planCapture(this.captureHeightVp, this.deviceDensity());
+    if (plan.split) {
+      Logger.warn(TAG, `capture exceeds budget: heightPx=${plan.heightPx}, pages=${plan.pages}`);
+      this.toast($r('app.string.report_too_long', plan.pages));
+      return false;
+    }
+    return true;
+  }
+
   private async captureData(): Promise<ArrayBuffer> {
     // 审查 R15.1：快照的 PixelMap 由创建者释放
     return ShareService.withSnapshot(CAPTURE_ID, (pixelMap) => ShareService.packPng(pixelMap));
@@ -166,6 +202,9 @@ struct ReportPage {
       this.toast($r('app.string.report_not_ready'));
       return;
     }
+    if (!this.withinCaptureBudget()) {
+      return;
+    }
     try {
       const fileName: string = FileService.stampName('bp_report_', '.png', DateUtils.now());
       const title: string = this.report === null ? '' : this.report.title;
@@ -181,6 +220,9 @@ struct ReportPage {
   private async printReport(): Promise<void> {
     if (!this.canExport()) {
       this.toast($r('app.string.report_not_ready'));
+      return;
+    }
+    if (!this.withinCaptureBudget()) {
       return;
     }
     try {
@@ -268,6 +310,9 @@ struct ReportPage {
           })
             .onClick(async (event: ClickEvent, result: SaveButtonOnClickResult) => {
               if (result !== SaveButtonOnClickResult.SUCCESS) {
+                return;
+              }
+              if (!this.withinCaptureBudget()) {
                 return;
               }
               try {
@@ -498,7 +543,11 @@ struct ReportPage {
           .margin({ bottom: 12 })
       }
       .id(CAPTURE_ID)
-      .width('100%')
+      // 审查 R15.3：显式 1080px 宽（换算成 vp），不随屏幕密度与用户缩放变化
+      .width(this.captureWidthVp())
+      .onAreaChange((oldValue: Area, newValue: Area) => {
+        this.captureHeightVp = Number(newValue.height);
+      })
       .padding(16)
       .backgroundColor($r('app.color.print_bg'))
       .borderRadius(12)

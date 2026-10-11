@@ -629,6 +629,10 @@
       "value": "血压趋势图"
     },
     {
+      "name": "chart_export_scope",
+      "value": "导出为整段选定周期（自动全览），不是当前放大视口"
+    },
+    {
       "name": "metric_count",
       "value": "测量次数"
     },
@@ -1431,6 +1435,10 @@
     {
       "name": "report_not_ready",
       "value": "报告还没准备好，请稍候再试"
+    },
+    {
+      "name": "report_too_long",
+      "value": "报告过长，需分 %d 张导出；当前版本只支持单张，请缩短周期（例如改用 7 天）"
     },
     {
       "name": "report_med_pending_not_due",

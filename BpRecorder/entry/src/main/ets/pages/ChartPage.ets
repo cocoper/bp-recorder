@@ -513,6 +513,20 @@ struct ChartPage {
   }
 
   /** 把当前视图渲染为 PNG 并调起系统分享面板（FR-11.1 / FR-11.3） */
+  /**
+   * 导出前把图切到「全览」（审查 R15.3）：趋势导出明确是**整段选定周期**，
+   * 而不是当前放大视口 —— 避免导出的图暗中裁掉边缘日期。完成后还原用户视口。
+   */
+  private async withFullRange<T>(work: () => Promise<T>): Promise<T> {
+    const previous: number = this.zoom;
+    this.syncZoomToFit();
+    try {
+      return await work();
+    } finally {
+      this.zoom = previous;
+    }
+  }
+
   private async shareChart(): Promise<void> {
     if (this.loading) {
       // 加载中截屏会拿到上一个区间的图（或空图），先给出明确反馈而不是失败提示
@@ -522,8 +536,12 @@ struct ChartPage {
     try {
       const fileName: string = FileService.stampName('bp_chart_', '.png', DateUtils.now());
       const title: string = ResUtils.text(this.context(), $r('app.string.share_chart_title'));
-      await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
-        ShareService.shareImage(this.context(), pixelMap, fileName, title));
+      await this.withFullRange(async () => {
+        await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
+          ShareService.shareImage(this.context(), pixelMap, fileName, title));
+      });
+      // 明确导出范围（审查 R15.3）：整段选定周期，而不是当前放大视口
+      this.toast($r('app.string.chart_export_scope'));
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `share chart failed: ${ShareService.describeError(e)}`);
@@ -668,8 +686,8 @@ struct ChartPage {
             return;
           }
           try {
-            const data: ArrayBuffer = await ShareService.withSnapshot(CAPTURE_ID,
-              (pixelMap) => ShareService.packPng(pixelMap));
+            const data: ArrayBuffer = await this.withFullRange(async () =>
+              ShareService.withSnapshot(CAPTURE_ID, (pixelMap) => ShareService.packPng(pixelMap)));
             await ShareService.saveToAlbum(this.context(), data);
             this.toast($r('app.string.toast_saved_album'));
           } catch (err) {
