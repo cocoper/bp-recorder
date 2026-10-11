@@ -274,6 +274,13 @@ export class MedService {
    * 幂等性由 BpDatabase 的 UNIQUE(medication_id, scheduled_time) + INSERT OR IGNORE 保证，
    * 本方法只负责「算出应存在的记录」，重复调用不会产生重复数据。
    */
+  /**
+   * 首次生成某个计划版本的应服实例（保存计划 / 导入计划时调用）。
+   *
+   * **审查 R01.2**：新版本计划的生效下界 = max(保存时刻 `fromTs`, `startDate`)，因此
+   * **今天已经过去的时点不生成**（过去只有「12:00 建 08:00 计划」会倒造出一条创建前的义务）；
+   * 也不能只把 `now` 截到日初。旧版本的离线缺口由 `MedLifecycleService` 按各自的有效区间补齐。
+   */
   static pendingDrafts(plans: MedPlan[], meds: Medication[], fromTs: number, days: number): MedLogDraft[] {
     const drafts: MedLogDraft[] = [];
     const dayCount: number = days < 1 ? 1 : days;
@@ -283,6 +290,10 @@ export class MedService {
       const slots: SlotInstance[] = MedService.planSlotsOf(dayTs, plans, meds);
       for (let i = 0; i < slots.length; i++) {
         const s: SlotInstance = slots[i];
+        if (s.scheduledTime < fromTs) {
+          // 生效时刻之前的义务不属于这个版本（历史义务由生命周期服务按有效区间补齐）
+          continue;
+        }
         drafts.push({
           medicationId: s.medicationId,
           medName: s.medName,

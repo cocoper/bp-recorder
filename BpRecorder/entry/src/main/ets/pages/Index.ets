@@ -10,6 +10,7 @@ import { BpRecord } from '../model/BpRecord';
 import { TodayMedLine } from '../model/Med';
 import { CheckInAction, MedLogStatus } from '../model/Types';
 import { BpDatabase } from '../service/BpDatabase';
+import { MedLifecycleService } from '../service/MedLifecycleService';
 import { MedService } from '../service/MedService';
 import { StatsService, MeanPair } from '../service/StatsService';
 import { MedCheckInDialog } from '../components/MedCheckInDialog';
@@ -83,6 +84,8 @@ struct Index {
   private ds: BpListDataSource = new BpListDataSource();
   @State private loaded: number = 0;
   @State private total: number = 0;
+  /** 本页当天是否已跑过用药生命周期（跨日保护，审查 R01.1） */
+  private lifecycleDate: string = '';
   @State private noMore: boolean = true;
   @State private loading: boolean = false;
   @State private refreshing: boolean = false;
@@ -107,8 +110,28 @@ struct Index {
   onPageShow(): void {
     // 从录入/编辑页返回后同步刷新列表、今日概览与预警条
     if (BpDatabase.getInstance().isReady()) {
-      this.reloadAll();
+      this.refreshLifecycleThenReload();
     }
+  }
+
+  /**
+   * 页面跨日保护（审查 R01.1）：跨过 00:00 后再进首页时，先跑一次用药生命周期
+   * （补齐应服实例 → 派生漏服 → 停用到期计划），再刷新界面。同一天内不重复跑。
+   */
+  private async refreshLifecycleThenReload(): Promise<void> {
+    const now: number = DateUtils.now();
+    const today: string = DateUtils.formatDate(now);
+    try {
+      if (this.lifecycleDate !== today) {
+        const result = await MedLifecycleService.run(BpDatabase.getInstance(), now);
+        this.lifecycleDate = today;
+        Logger.info(TAG, `lifecycle on page show: backfilled=${result.backfilled}, missed=${result.markedMissed}, deactivated=${result.deactivatedPlans}`);
+      }
+    } catch (err) {
+      const e = err as BusinessError;
+      Logger.error(TAG, `lifecycle on page show failed: code=${e.code}, message=${e.message}`);
+    }
+    this.reloadAll();
   }
 
   private context(): common.UIAbilityContext {

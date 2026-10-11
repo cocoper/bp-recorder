@@ -11,6 +11,7 @@ import { Medication, MedLog, MedPlan, ReminderCapability } from '../model/Med';
 import { MedLogStatus, ReminderMode } from '../model/Types';
 import { BpDatabase } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
+import { LifecycleResult, MedLifecycleService } from '../service/MedLifecycleService';
 import { ReminderService } from '../service/ReminderService';
 
 const TAG: string = 'EntryAbility';
@@ -101,33 +102,15 @@ export default class EntryAbility extends UIAbility {
     const context: common.UIAbilityContext = this.context;
     const now: number = DateUtils.now();
     try {
-      // 1) 超过计划时间 2h 仍未打卡的 pending → missed
-      const missed: number = await db.markMissed(now);
-      if (missed > 0) {
-        Logger.info(TAG, `marked ${missed} overdue logs as missed`);
-      }
+      // 1) 用药生命周期（审查 R01）：补齐应服实例 → 派生/落库漏服 → 停用到期计划。
+      //    过去这三件事分散实现，且应服实例只在「保存计划/导入计划」时生成一次 ——
+      //    长期计划到第 8 天就没有可打卡记录了（PRE_GEN_DAYS=7）。
+      const lifecycle: LifecycleResult = await MedLifecycleService.run(db, now);
+      Logger.info(TAG, `lifecycle: backfilled=${lifecycle.backfilled}, missed=${lifecycle.markedMissed}, deactivated=${lifecycle.deactivatedPlans}`);
 
-      // 2) 读取当前生效计划；先把 end_date 已过的计划自动停用（v1.15 / 裁决 D3）
-      let plans: MedPlan[] = await db.queryActivePlans();
+      // 2) 重新读取生效计划（生命周期可能刚把到期的停用掉），再做提醒协调
+      const plans: MedPlan[] = await db.queryActivePlans();
       const meds: Medication[] = await db.queryMedications();
-
-      // 1b) 过期计划自愈：系统侧的每日代理闹钟（daysOfWeek 无限重复）**没有结束日期参数**，
-      //     若计划过了 end_date 却仍在 isActive，用户停药后只要不再打开 App 就会一直收到提醒。
-      //     这里把它停用并清掉「未来且仍 pending」的待服实例；已服 / 跳过 / 漏服等历史打卡一律不动
-      //     （与 FR-8.3 手动停用同一条清理通路，见策划 §10 风险表）。
-      const expiredIds: number[] = MedService.expiredPlanIds(plans, DateUtils.formatDate(now));
-      if (expiredIds.length > 0) {
-        for (let i = 0; i < plans.length; i++) {
-          const plan: MedPlan = plans[i];
-          if (expiredIds.indexOf(plan.id) < 0) {
-            continue;
-          }
-          await db.deactivatePlan(plan.id);
-          await db.deleteFuturePendingLogs(plan.medicationId, now);
-        }
-        plans = await db.queryActivePlans();
-        Logger.info(TAG, `auto-deactivated ${expiredIds.length} expired plan(s)`);
-      }
 
       const capability = await ReminderService.rebuildAll(context, plans, meds,
         VocabFactory.reminder(context), now, false);

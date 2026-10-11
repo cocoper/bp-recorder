@@ -18,8 +18,9 @@ import {
   ColRole, GenericImportService, GenericBpPreview, Detection, MappingPlan, ROLE_COUNT
 } from './src/service/GenericImportService';
 import { BpRecord } from './src/model/BpRecord';
-import { Medication, MedLog, MedPlan, PlanExportRow } from './src/model/Med';
+import { Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
 import { BpDatabase, TxSession } from './src/service/BpDatabase';
+import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 
@@ -415,12 +416,16 @@ eq(slots[1].scheduledTime, ts(2026, 10, 6, 18, 0), '时间点升序：第二个�
 eq(slots[0].medName, '缬沙坦', '药品名快照正确');
 
 const drafts = MedService.pendingDrafts([plan(1, 1, ['07:30', '18:00'], '2026-10-01', null, true)], meds, ts(2026, 10, 6, 12, 0), 7);
-eq(drafts.length, 14, '7 天 × 2 次 = 14 条预生成');
-eq(drafts[0].scheduledTime, ts(2026, 10, 6, 7, 30), '预生成首条为当天 07:30');
-eq(drafts[13].scheduledTime, ts(2026, 10, 12, 18, 0), '预生成末条为第 7 天 18:00');
+// 审查 R01.2：首次生成的生效下界 = max(基准时刻, startDate)，当天已过去的时点不生成。
+// 基准 10-06 12:00 → 当天只剩余 18:00，加第 2..7 天各 2 次 = 1 + 12 = 13 条（业务含义仍是「7 天窗口」）。
+eq(drafts.length, 13, '7 天窗口内、且不早于生效时刻的预生成条数 = 13');
+eq(drafts[0].scheduledTime, ts(2026, 10, 6, 18, 0), '预生成首条为当天 18:00（07:30 已过，不生成）');
+eq(drafts[12].scheduledTime, ts(2026, 10, 12, 18, 0), '预生成末条为第 7 天 18:00');
 
 const draftsEnd = MedService.pendingDrafts([plan(1, 1, ['08:00'], '2026-10-01', '2026-10-03', true)], meds, ts(2026, 10, 1, 12, 0), 7);
-eq(draftsEnd.length, 3, '结束日期截断预生成（10-01~10-03）');
+// 审查 R01.2：基准 10-01 12:00，08:00 当天已过 → 只生成 10-02、10-03（结束日期仍正确截断）
+eq(draftsEnd.length, 2, '结束日期截断预生成 + 生效时刻收窄（10-02~10-03）');
+eq(draftsEnd[0].scheduledTime, ts(2026, 10, 2, 8, 0), '首条落在生效时刻之后的第一天');
 
 // v1.15 / 裁决 D3：进入前台时把 end_date 已过的计划自动停用（每日代理闹钟没有结束日期参数）
 group('过期计划自动停用（FR-8.3）');
@@ -1210,6 +1215,65 @@ group('外部来源：用户手工改列对应后结果随之变化');
 // 迁入正式回归时保留业务断言含义；编号 Rxx-y 与报告、docs/审查整改执行记录.md 的映射表一一对应。
 async function reviewScenarios(): Promise<void> {
   const ctxStub = {} as unknown as common.Context;
+
+  group('审查反例 R01（用药生命周期：滚动补齐与有效区间）');
+  {
+    const medsR01: Medication[] = [med(1, '测试药1'), med(2, '测试药2')];
+    const p1: MedPlan = plan(11, 1, ['08:00'], '2026-10-01', null, true);
+    const day1: MedLogDraft[] = MedLifecycleService.obligations([p1], medsR01, ts(2026, 10, 1, 6, 0));
+    eq(day1.length, 8, 'R01 第 1 天：10-01..10-08（now+7）共 8 条应服实例');
+    const day8: MedLogDraft[] = MedLifecycleService.obligations([p1], medsR01, ts(2026, 10, 8, 6, 0));
+    ok(day8.length >= 8, 'R01 第 8 天仍有应服实例（旧实现第 8 天起没有记录可打卡）');
+    // 第 30 天：窗口下界取「计划有效下界(10-01)」与「now-30 天(09-30)」的较晚者 = 10-01，
+    // 上界 = now+7 天(11-06)，即 10-01..11-06 共 37 天 × 1 个时点 = 37 条。
+    const day30: MedLogDraft[] = MedLifecycleService.obligations([p1], medsR01, ts(2026, 10, 30, 6, 0));
+    eq(day30.length, 37, 'R01 第 30 天：计划持续产生应服实例（10-01..11-06 共 37 条）');
+    eq(day30[day30.length - 1].scheduledTime, ts(2026, 11, 6, 8, 0), 'R01 末条为 now+7 天 08:00');
+
+    const before: MedLogDraft[] = MedLifecycleService.obligations([p1], medsR01, ts(2026, 10, 5, 23, 59));
+    const after: MedLogDraft[] = MedLifecycleService.obligations([p1], medsR01, ts(2026, 10, 6, 0, 1));
+    eq(after.length - before.length, 1, 'R01 跨午夜（23:59→00:01）多出次日 1 条');
+
+    const p2: MedPlan = plan(12, 2, ['08:00'], '2026-10-01', '2026-10-03', true);
+    eq(MedLifecycleService.obligations([p2], medsR01, ts(2026, 10, 10, 12, 0)).length, 3,
+      'R01 离线跨过计划结束日：只补到 10-03');
+
+    const fresh: MedPlan = {
+      id: 13, medicationId: 1, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: ts(2026, 10, 11, 12, 0), updatedAt: ts(2026, 10, 11, 12, 0)
+    };
+    const freshOb: MedLogDraft[] = MedLifecycleService.obligations([fresh], medsR01, ts(2026, 10, 11, 12, 0));
+    let beforeNoon = 0;
+    for (let i = 0; i < freshOb.length; i++) {
+      if (freshOb[i].scheduledTime < ts(2026, 10, 11, 12, 0)) {
+        beforeNoon++;
+      }
+    }
+    eq(beforeNoon, 0, 'R01 12:00 保存的新版本不倒造当天 08:00（下界 = max(startDate, 保存时刻)）');
+
+    const oldVer: MedPlan = {
+      id: 14, medicationId: 1, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null,
+      isActive: false, createdAt: ts(2026, 10, 1, 0, 0), updatedAt: ts(2026, 10, 11, 12, 0)
+    };
+    eq(MedLifecycleService.effectiveTo(oldVer, ts(2026, 10, 20, 0, 0)), ts(2026, 10, 11, 12, 0),
+      'R01 旧版本有效上界 = 停用时刻（不臆造停止日期）');
+    const newVer: MedPlan = {
+      id: 15, medicationId: 1, timeSlots: ['09:00'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: ts(2026, 10, 11, 12, 0), updatedAt: ts(2026, 10, 11, 12, 0)
+    };
+    const newOb: MedLogDraft[] = MedLifecycleService.obligations([newVer], medsR01, ts(2026, 10, 11, 12, 0));
+    eq(newOb[0].scheduledTime, ts(2026, 10, 12, 9, 0), 'R01 改到 09:00 的新版本从次日 09:00 起生成');
+
+    eq(MedLifecycleService.missingOf(freshOb as unknown as MedLog[], freshOb).length, 0,
+      'R01 幂等：已有记录不再重复生成');
+
+    const ancient: MedPlan = {
+      id: 16, medicationId: 2, timeSlots: ['08:00'], startDate: '2026-01-01', endDate: null,
+      isActive: true, createdAt: ts(2026, 1, 1, 0, 0), updatedAt: ts(2026, 1, 1, 0, 0)
+    };
+    eq(MedLifecycleService.obligations([ancient], medsR01, ts(2026, 10, 11, 12, 0)).length, 38,
+      'R01 回补上限：200 天未打开也只补 30 天 + 未来 7 天 = 38 条，不倒造多年漏服');
+  }
 
   group('审查反例 R17（测试实例隔离）');
   {
