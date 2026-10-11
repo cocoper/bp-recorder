@@ -327,7 +327,9 @@ export class CsvHeaderRes {
     $r('app.string.csv_hdr_note'),
     // v1.20（审查 R09）：精确时间列 —— 计划/打卡的完整毫秒时间戳，保证补记时间与标记无损往返
     $r('app.string.csv_hdr_plan_ts'),
-    $r('app.string.csv_hdr_taken_ts')
+    $r('app.string.csv_hdr_taken_ts'),
+    // v1.20（审查 R10-c）：稳定药品 ID —— 同名不同 ID 的两条独立记录不得在恢复时被合并
+    $r('app.string.csv_hdr_med_id')
   ];
 
   /**

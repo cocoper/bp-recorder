@@ -437,16 +437,27 @@ export class ImportService {
       const noteText: string = Csv.cell(row, 6);
       const note: string | null = noteText.length === 0 ? null : noteText;
 
+      // 审查 R10-c：文件带稳定药品 ID 时，身份**只按 ID 判定** ——
+      // 同名不同 ID 的两条独立记录不得被判成重复而合并（过去按名称判重会把它们并成一条）。
+      const fileMedIdText: string = row.length > 9 ? Csv.cell(row, 9) : '';
+      const fileMedId: number = fileMedIdText.length === 0 ? 0 : Number.parseInt(fileMedIdText, 10);
+      const stableKey: string | null = (!Number.isNaN(fileMedId) && fileMedId > 0)
+        ? ImportService.medKeyById(fileMedId, scheduledTime) : null;
       const idKey: string | null = ImportService.nameKeyOf(medName, scheduledTime, nameToId);
       const nameKey: string = ImportService.medKeyByName(medName, scheduledTime);
-      const isDup: boolean = existingKeys.has(nameKey) || seen.has(nameKey)
-        || (idKey !== null && (existingKeys.has(idKey) || seen.has(idKey)));
+      let isDup: boolean = false;
+      if (stableKey !== null) {
+        isDup = existingKeys.has(stableKey) || seen.has(stableKey);
+        seen.add(stableKey);
+      } else {
+        isDup = existingKeys.has(nameKey) || seen.has(nameKey)
+          || (idKey !== null && (existingKeys.has(idKey) || seen.has(idKey)));
+        seen.add(nameKey);
+      }
       if (isDup) {
         duplicateCount++;
-        seen.add(nameKey);
         continue;
       }
-      seen.add(nameKey);
       drafts.push({
         medName: medName,
         dosage: dosage,
@@ -701,8 +712,26 @@ export class ImportService {
             nameToId.set(d.medName, medId);
             created.push(d.medName);
           } else {
-            // 已有档案：确保启用，并按导入内容同步剂量
+            // 审查 R10-a：已有档案必须**真的同步剂量与备注**（过去只启用、不同步，
+            // 于是「导入 2 片」之后档案仍是 1 片，而注释却声称已同步）。
             await db.setMedicationActive(medId, true, tx);
+            let existing: Medication | null = null;
+            for (let k = 0; k < meds.length; k++) {
+              if (meds[k].id === medId) {
+                existing = meds[k];
+              }
+            }
+            if (existing !== null && (existing.dosage !== d.dosage || existing.note !== d.note)) {
+              await db.updateMedication({
+                id: medId,
+                name: existing.name,
+                dosage: d.dosage,
+                note: d.note,
+                isActive: true,
+                createdAt: existing.createdAt,
+                updatedAt: DateUtils.now()
+              }, tx);
+            }
           }
           // 计划整体替换：先清掉按旧计划生成的未来待服记录（P1-3），再写入新计划
           await db.deleteFuturePendingLogs(medId, now, tx);

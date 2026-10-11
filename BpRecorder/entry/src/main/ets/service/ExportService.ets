@@ -95,7 +95,9 @@ export class ExportService {
         log.note === null || log.note === undefined ? '' : log.note,
         // 审查 R09：完整 scheduled_time 与可空 taken_time（毫秒），避免补记时间被降级成「当天 HH:mm」
         `${log.scheduledTime}`,
-        taken === null || taken === undefined ? '' : `${taken}`
+        taken === null || taken === undefined ? '' : `${taken}`,
+        // 审查 R10-c：稳定药品 ID，恢复时按 ID 判身份（同名不同 ID 不合并）
+        `${log.medicationId}`
       ]);
     }
     return Csv.stringify(rows, true);

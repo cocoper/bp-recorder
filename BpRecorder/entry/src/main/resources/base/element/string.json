@@ -801,6 +801,10 @@
       "value": "打卡时间戳(毫秒)"
     },
     {
+      "name": "csv_hdr_med_id",
+      "value": "药品ID"
+    },
+    {
       "name": "csv_hdr_plan_time",
       "value": "计划时间"
     },
