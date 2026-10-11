@@ -509,6 +509,10 @@
       "value": "药品名称为空"
     },
     {
+      "name": "err_imp_med_ambiguous",
+      "value": "药品名对应多个档案，无法确定身份：请补充「药品ID」列，或先在档案里改名区分"
+    },
+    {
       "name": "err_imp_taken_time_invalid",
       "value": "实际打卡时间格式非法"
     },

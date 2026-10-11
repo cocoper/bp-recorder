@@ -354,8 +354,35 @@ export class ImportService {
    * 解析用药打卡 CSV。
    * @param nameToId 现有药品「名称 → id」映射（用于判重与建关联）
    */
+  /**
+   * 同名多候选的药名集合（审查 R10.5）：旧 CSV 没有稳定药品 ID 列，
+   * 若一个药名对应多个档案，**必须报歧义让用户处理**，不能 Map.set 任取最后一个。
+   */
+  static ambiguousNames(meds: Medication[]): Set<string> {
+    const idsByName: Map<string, number[]> = new Map<string, number[]>();
+    for (let i = 0; i < meds.length; i++) {
+      const m: Medication = meds[i];
+      const list: number[] | undefined = idsByName.get(m.name);
+      if (list === undefined) {
+        idsByName.set(m.name, [m.id]);
+      } else {
+        list.push(m.id);
+      }
+    }
+    const out: Set<string> = new Set<string>();
+    const names: string[] = Array.from(idsByName.keys());
+    for (let i = 0; i < names.length; i++) {
+      const list: number[] | undefined = idsByName.get(names[i]);
+      if (list !== undefined && list.length > 1) {
+        out.add(names[i]);
+      }
+    }
+    return out;
+  }
+
   static parseMedTable(rows: string[][], vocab: CsvVocab, existingKeys: Set<string>,
-    nameToId: Map<string, number>, existingPendingKeys?: Set<string>): MedImportPreview {
+    nameToId: Map<string, number>, existingPendingKeys?: Set<string>,
+    ambiguous?: Set<string>): MedImportPreview {
     const data: string[][] = Csv.normalize(rows);
     const drafts: MedImportDraft[] = [];
     const errors: ImportIssue[] = [];
@@ -461,6 +488,15 @@ export class ImportService {
       const fileMedId: number = fileMedIdText.length === 0 ? 0 : Number.parseInt(fileMedIdText, 10);
       const stableKey: string | null = (!Number.isNaN(fileMedId) && fileMedId > 0)
         ? ImportService.medKeyById(fileMedId, scheduledTime) : null;
+      // 审查 R10.5：旧 CSV 没有药品 ID 列且药名对应多个档案 → 报歧义，不猜身份
+      if (stableKey === null && ambiguous !== undefined && ambiguous.has(medName)) {
+        errors.push({
+          lineNo: lineNo,
+          reason: $r('app.string.err_imp_med_ambiguous'),
+          detail: medName
+        });
+        continue;
+      }
       const idKey: string | null = ImportService.nameKeyOf(medName, scheduledTime, nameToId);
       const nameKey: string = ImportService.medKeyByName(medName, scheduledTime);
       let isDup: boolean = false;

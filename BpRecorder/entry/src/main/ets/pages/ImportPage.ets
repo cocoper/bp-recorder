@@ -201,7 +201,8 @@ struct ImportPage {
         for (let i = 0; i < meds.length; i++) {
           nameToId.set(meds[i].name, meds[i].id);
         }
-        const preview: MedImportPreview = ImportService.parseMedTable(rows, vocab, keys, nameToId, pendingKeys);
+        const ambiguous: Set<string> = ImportService.ambiguousNames(meds);
+        const preview: MedImportPreview = ImportService.parseMedTable(rows, vocab, keys, nameToId, pendingKeys, ambiguous);
         this.medPreview = preview;
         this.applyPreview(preview.totalRows, preview.drafts.length, preview.duplicateCount,
           preview.errors, preview.previewLines);

@@ -1697,6 +1697,20 @@ async function reviewScenarios(): Promise<void> {
     ok(r3.issues.length > 0, 'R10 校验不通过时返回问题清单');
     eq(r3.added.meds + r3.added.plans + r3.added.logs + r3.added.bp, 0, 'R10 校验不通过时零新增');
     eq(store.writes, writesBefore, 'R10 校验不通过时不写入任何数据（不产生半恢复）');
+
+    // R10.5：旧 CSV（无药品 ID 列）遇到同名多候选必须报歧义，不能任取最后一个
+    const dupMeds: Medication[] = [med(1, '缬沙坦'), med(2, '缬沙坦')];
+    const ambiguous: Set<string> = ImportService.ambiguousNames(dupMeds);
+    eq(ambiguous.size, 1, 'R10.5 同名多档案被识别为歧义');
+    const legacyMed: string = `${VOCAB.medHeaders.slice(0, 5).join(',')}\n` +
+      `2026-10-11,08:00,缬沙坦,1片,${VOCAB.statusTaken}`;
+    const ambPreview = ImportService.parseMedTable(Csv.parse(legacyMed), VOCAB, new Set<string>(),
+      new Map<string, number>([['缬沙坦', 2]]), undefined, ambiguous);
+    eq(ambPreview.drafts.length, 0, 'R10.5 歧义药名不得猜测身份入库');
+    eq(ambPreview.errors.length, 1, 'R10.5 歧义行报 1 条明确错误');
+    // 带稳定 ID 的新版文件不受影响（同一文件里带 ID 应当照常处理）
+    const uniqueMeds: Medication[] = [med(1, '缬沙坦')];
+    eq(ImportService.ambiguousNames(uniqueMeds).size, 0, 'R10.5 唯一药名不产生歧义');
   }
 
   group('审查反例 R17（测试实例隔离）');
