@@ -20,7 +20,8 @@ const STEPS = [
   ['check-project-config（工程配置）', 'tools/check-project-config.mjs'],
   ['check-api-usage（API 使用扫描）', 'tools/check-api-usage.mjs'],
   ['check-encoding-fallback（编码回落）', 'tools/check-encoding-fallback.mjs'],
-  ['check-tooltip-geometry（气泡几何）', 'tools/check-tooltip-geometry.mjs']
+  ['check-tooltip-geometry（气泡几何）', 'tools/check-tooltip-geometry.mjs'],
+  ['check-version（版本与产物一致性）', 'tools/check-version.mjs']
 ];
 
 if (!skipReview) {
