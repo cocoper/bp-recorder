@@ -51,7 +51,14 @@ function take(outPath) {
   }
   const db = new DatabaseSync(join(dir, 'bp_recorder.db'));
   const count = (sql) => db.prepare(sql).get().c;
+  // PRAGMA 返回的列名不是 c（如 user_version），单独取值
+  const pragmaValue = (sql) => {
+    const row = db.prepare(sql).get();
+    return row === undefined || row === null ? null : Object.values(row)[0];
+  };
   const counts = {
+    // 结构版本是一等指纹字段（审查 R01：v2→v4 升级要能被观测到）
+    schema_version: pragmaValue('PRAGMA user_version'),
     bp_record: count('SELECT COUNT(*) AS c FROM bp_record'),
     med_log: count('SELECT COUNT(*) AS c FROM med_log'),
     med_log_taken: count("SELECT COUNT(*) AS c FROM med_log WHERE status = 'taken'"),
