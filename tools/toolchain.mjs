@@ -29,11 +29,11 @@ const local = readLocalConfig();
 /** 运行离线脚本的 Node：默认当前 Node，可用 PARITY_NODE 覆盖。 */
 export const NODE_BIN = process.env.PARITY_NODE ?? local.nodeBin ?? process.execPath;
 
+// 只认「环境变量 → 本机配置文件 → 操作系统标准安装位置」，不写死任何个人目录（审查 R16）。
 const DEVECO_CANDIDATES = [
   process.env.DEVECO_HOME,
   local.devecoHome,
-  '/Applications/DevEco-Studio.app/Contents',
-  '/Volumes/ZT700-Data/Applications/DevEco-Studio.app/Contents'
+  '/Applications/DevEco-Studio.app/Contents'
 ];
 
 /** DevEco Studio 的 Contents 目录；找不到返回 null（调用方决定是报错还是降级）。 */
