@@ -155,8 +155,20 @@ export class ImportService {
     const totalRows: number = data.length - start;
 
     for (let i = start; i < data.length; i++) {
-      const lineNo: number = i + 1;
+      // 审查 R14.1：报错用「物理行号」，含引号内换行与前置空行也准确
+      const lineNo: number = Csv.physicalLineOf(i);
       const row: string[] = data[i];
+
+      // 审查 R14.1：结构错误（引号未闭合、字段超长、列数超限）必须拒绝整行
+      const structIssue = Csv.issueAt(i);
+      if (structIssue !== null) {
+        errors.push({
+          lineNo: structIssue.physicalLine,
+          reason: $r('app.string.err_imp_csv_broken'),
+          detail: structIssue.kind
+        });
+        continue;
+      }
 
       // 缺列：日期 / 时间 / 收缩压 / 舒张压 四列必须有
       if (row.length < 4) {

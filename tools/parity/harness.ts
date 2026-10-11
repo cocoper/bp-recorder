@@ -1513,6 +1513,32 @@ async function reviewScenarios(): Promise<void> {
     eq(gp.errors.length, 1, 'R13-b 非法心率报 1 条行错误');
   }
 
+  group('审查反例 R14（CSV 结构与容量契约）');
+  {
+    const broken = ImportService.parseBpTable(Csv.parse('2026-10-11,08:00,120,80,70,,"unfinished'),
+      VOCAB, new Set<string>());
+    eq(broken.drafts.length, 0, 'R14-a 未闭合引号的行不得入库');
+    eq(broken.errors.length, 1, 'R14-a 报 1 条结构错误');
+    eq(broken.errors[0].lineNo, 1, 'R14-a 结构错误带正确物理行号');
+
+    // 前置空行 + 后续出错：报错必须指向真实的物理行（第 4 行）
+    const withBlank = ImportService.parseBpTable(
+      Csv.parse('\n\n2026-10-11,08:00,120,80,70,,"ok"\n2099-10-11,08:00,120,80,70,,'),
+      VOCAB, new Set<string>());
+    ok(withBlank.errors.length >= 1, 'R14 前置空行后仍能定位出错行');
+    eq(withBlank.errors[0].lineNo, 4, 'R14 出错行物理行号 = 4');
+
+    // 容量契约：单字段超过 4096 字符被登记为结构错误，而不是静默接受
+    let big: string = '';
+    for (let i = 0; i < 4200; i++) {
+      big += 'x';
+    }
+    Csv.parse(`2026-10-11,08:00,120,80,70,,${big}`);
+    ok(Csv.issueAt(0) !== null, 'R14 超长字段被登记为结构错误（上限 4096）');
+    ok(Csv.MAX_ROWS === 50000 && Csv.MAX_COLUMNS === 64 && Csv.MAX_BYTES === 10485760,
+      'R14 容量契约常量齐备（10 MiB / 50000 行 / 64 列 / 4096 字符）');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;

@@ -1539,6 +1539,10 @@
     {
       "name": "err_future_time",
       "value": "测量时间不能晚于当前时间"
+    },
+    {
+      "name": "err_imp_csv_broken",
+      "value": "CSV 结构错误（引号未闭合、字段超长或列数超限）"
     }
   ]
 }
