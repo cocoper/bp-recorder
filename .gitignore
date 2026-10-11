@@ -20,5 +20,8 @@ tools/parity/.build/
 # 应用签名配置含明文口令与密钥库路径（本机专用），**不入库**；仓库里放的是 *.example.json5
 BpRecorder/build-profile.json5
 
-# 历史备份（应用仓库并入前导出的 git bundle）
-.workbuddy/backup/
+# 会话笔记与历史备份：**只留本地**，不进仓库（用户 2026-10-11 明确要求）
+.workbuddy/
+
+# 评审/复现的临时产物（其他会话在工作区生成的中间文件）
+docs/review-*/
