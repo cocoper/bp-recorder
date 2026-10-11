@@ -4,7 +4,7 @@ import { notificationManager } from '@kit.NotificationKit';
 import { preferences } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { SlotInstance } from '../model/BpRecord';
-import { Medication, MedPlan, ReminderCapability } from '../model/Med';
+import { Medication, MedPlan, ReminderCapability, ReminderSyncResult } from '../model/Med';
 import { ReminderMode, parseReminderMode } from '../model/Types';
 import { PrefKeys, ReminderConst } from '../common/Constants';
 import { DateUtils } from '../common/DateUtils';
@@ -12,6 +12,25 @@ import { Logger } from '../common/Logger';
 import { ReminderVocab } from '../common/Vocab';
 import { MedService, SlotGroup } from './MedService';
 import { BpDatabase } from './BpDatabase';   // 仅用于 syncFromDatabase：不反向依赖，无环
+import { MedLifecycleService } from './MedLifecycleService';
+
+/** 期望提醒的一段（时点 × 药品集合 × 生效区间），审查 R04/R03 */
+export interface ExpectedReminder {
+  /** 业务键：分钟@起日~止日#内容 */
+  key: string;
+  /** 当天分钟数 */
+  minutes: number;
+  fromDate: string;
+  /** '' = 长期 */
+  toDate: string;
+  content: string;
+  /** true → 用日历型提醒（有结束日或未来才开始） */
+  bounded: boolean;
+  /** 首次触发时刻 */
+  firstTs: number;
+  /** 结束时刻（0 = 长期） */
+  endTs: number;
+}
 
 const TAG: string = 'ReminderService';
 
@@ -234,12 +253,12 @@ export class ReminderService {
    * - 单药停用**不允许**实现成最终的全量取消（B 的提醒必须完整保留）。
    */
   static async syncFromDatabase(context: common.UIAbilityContext, db: BpDatabase,
-    vocab: ReminderVocab, now: number): Promise<ReminderCapability> {
+    vocab: ReminderVocab, now: number): Promise<ReminderSyncResult> {
     const plans: MedPlan[] = await db.queryActivePlans();
     const meds: Medication[] = await db.queryMedications();
-    const capability: ReminderCapability = await ReminderService.rebuildAll(context, plans, meds, vocab, now, true);
-    Logger.info(TAG, `reminders synced from database: activePlans=${plans.length}, mode=${capability.mode}`);
-    return capability;
+    const result: ReminderSyncResult = await ReminderService.sync(context, plans, meds, vocab, now, true);
+    Logger.info(TAG, `reminders synced from database: activePlans=${plans.length}, status=${result.status}`);
+    return result;
   }
 
   /** 提醒协调串行队列（审查 R05.3）：两个 cancelAll→publish 流程不得交错执行 */
@@ -259,102 +278,288 @@ export class ReminderService {
     }
   }
 
+  /**
+   * 期望提醒集合（审查 R04.3 / R03.2）：把「时间点 × 药品生效区间」展开成段，
+   * 同一时点的药品按各自有效区间切成区段 —— 例如 A 长期 08:00、B 仅 10-11 一天：
+   * 11 日那一段内容为 A+B，12 日起只剩 A。这样签名的依据是**期望集合**，而不是源计划文本。
+   */
+  static expectedReminders(plans: MedPlan[], meds: Medication[], now: number): ExpectedReminder[] {
+    interface Item { minutes: number; from: number; to: number; text: string; }
+    const items: Item[] = [];
+    const medIndex: Map<number, Medication> = new Map<number, Medication>();
+    for (let i = 0; i < meds.length; i++) {
+      medIndex.set(meds[i].id, meds[i]);
+    }
+    for (let i = 0; i < plans.length; i++) {
+      const plan: MedPlan = plans[i];
+      if (!plan.isActive) {
+        continue;
+      }
+      const med: Medication | undefined = medIndex.get(plan.medicationId);
+      if (med === undefined || !med.isActive) {
+        continue;
+      }
+      const winFrom: number = Math.max(MedLifecycleService.effectiveFrom(plan), now);
+      // 有结束日期 → 以结束日当天 23:59 为界；无结束日期 → 0 表示长期
+      const endTs: number | null = MedService.endInstantOf(plan);
+      if (endTs !== null && endTs < now) {
+        continue;
+      }
+      const to: number = endTs === null ? 0 : endTs;
+      for (let k = 0; k < plan.timeSlots.length; k++) {
+        const minutes: number | null = MedService.slotMinutes(plan.timeSlots[k]);
+        if (minutes === null) {
+          continue;
+        }
+        items.push({ minutes: minutes, from: winFrom, to: to, text: `${med.name} ${med.dosage}` });
+      }
+    }
+
+    // 同一分钟按时点/区间边界切段
+    const byMinute: Map<number, Item[]> = new Map<number, Item[]>();
+    for (let i = 0; i < items.length; i++) {
+      const it: Item = items[i];
+      const bucket: Item[] | undefined = byMinute.get(it.minutes);
+      if (bucket === undefined) {
+        byMinute.set(it.minutes, [it]);
+      } else {
+        bucket.push(it);
+      }
+    }
+
+    const out: ExpectedReminder[] = [];
+    const minutesList: number[] = Array.from(byMinute.keys()).sort((a: number, b: number) => a - b);
+    for (let mi = 0; mi < minutesList.length; mi++) {
+      const minutes: number = minutesList[mi];
+      const group: Item[] = byMinute.get(minutes) as Item[];
+      // 边界：所有 from 与 to（0 当无穷大）的集合
+      const bounds: number[] = [];
+      for (let i = 0; i < group.length; i++) {
+        bounds.push(group[i].from);
+        if (group[i].to > 0) {
+          bounds.push(group[i].to);
+        }
+      }
+      bounds.sort((a: number, b: number) => a - b);
+      // 去重：多个药品共用同一有效区间时，边界只有一个，否则会切出零长区段
+      const uniq: number[] = [];
+      for (let i = 0; i < bounds.length; i++) {
+        if (i === 0 || bounds[i] !== bounds[i - 1]) {
+          uniq.push(bounds[i]);
+        }
+      }
+      for (let bi = 0; bi < uniq.length; bi++) {
+        const segStart: number = uniq[bi];
+        const segEnd: number = bi + 1 < uniq.length ? uniq[bi + 1] : 0;
+        if (segEnd > 0 && segEnd <= segStart) {
+          continue;
+        }
+        if (segEnd === 0) {
+          // 开放的尾段：只有当确实存在「没有结束日期」的药品时才成立
+          let hasOpen: boolean = false;
+          for (let i = 0; i < group.length; i++) {
+            if (group[i].to === 0) {
+              hasOpen = true;
+            }
+          }
+          if (!hasOpen) {
+            continue;
+          }
+        }
+        const names: string[] = [];
+        for (let i = 0; i < group.length; i++) {
+          const it: Item = group[i];
+          if (it.from <= segStart && (it.to === 0 || it.to >= segStart)) {
+            names.push(it.text);
+          }
+        }
+        if (names.length === 0) {
+          continue;
+        }
+        const fromDate: string = DateUtils.formatDate(segStart);
+        const toDate: string = segEnd === 0 ? '' : DateUtils.formatDate(segEnd);
+        const content: string = names.join('|');
+        const bounded: boolean = segEnd > 0 || segStart > now;
+        out.push({
+          key: `${minutes}@${fromDate}~${toDate}#${content}`,
+          minutes: minutes,
+          fromDate: fromDate,
+          toDate: toDate,
+          content: content,
+          bounded: bounded,
+          firstTs: ReminderService.firstTrigger(segStart, minutes, now),
+          endTs: segEnd
+        });
+      }
+    }
+    return out;
+  }
+
+  /** 首次触发时刻：从区间起点当天起，取第一个「>= now」的该时点 */
+  static firstTrigger(segStart: number, minutes: number, now: number): number {
+    let ts: number = DateUtils.atMinutesOfDay(segStart, minutes);
+    while (ts < now) {
+      ts = DateUtils.addDays(ts, 1);
+    }
+    return ts;
+  }
+
+  /** 期望集合的规范化签名（审查 R04.3）：排序后拼接，与源计划文本无关 */
+  static signatureOf(expected: ExpectedReminder[]): string {
+    const keys: string[] = [];
+    for (let i = 0; i < expected.length; i++) {
+      keys.push(`${expected[i].key}|${expected[i].bounded ? 'cal' : 'alarm'}`);
+    }
+    keys.sort();
+    return keys.join(';');
+  }
+
+  /** 把毫秒时间戳转成 SDK 的 LocalDateTime（月从 1 开始） */
+  static localDateTime(ts: number): reminderAgentManager.LocalDateTime {
+    const d: Date = new Date(ts);
+    return {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      day: d.getDate(),
+      hour: d.getHours(),
+      minute: d.getMinutes(),
+      second: 0
+    };
+  }
+
+  /**
+   * 协调入口：所有调用都排队执行（内部实现见 rebuildAllLocked）。
+   * `sync` 返回结构化结果（审查 R04/R05.1），`rebuildAll` 保留旧签名兼容既有调用方。
+   */
+  static async sync(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
+    vocab: ReminderVocab, now: number, force: boolean = false): Promise<ReminderSyncResult> {
+    return ReminderService.runExclusive<ReminderSyncResult>(() =>
+      ReminderService.syncLocked(context, plans, meds, vocab, now, force));
+  }
+
   /** 协调入口：所有调用都排队执行（内部实现见 rebuildAllLocked） */
   static async rebuildAll(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
     vocab: ReminderVocab, todayTs: number, force: boolean = false): Promise<ReminderCapability> {
-    return ReminderService.runExclusive<ReminderCapability>(() =>
-      ReminderService.rebuildAllLocked(context, plans, meds, vocab, todayTs, force));
+    const result: ReminderSyncResult = await ReminderService.sync(context, plans, meds, vocab, todayTs, force);
+    return result.capability;
   }
 
-  private static async rebuildAllLocked(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
-    vocab: ReminderVocab, todayTs: number, force: boolean = false): Promise<ReminderCapability> {
+  /**
+   * 协调实现（审查 R04/R03）：期望集合 → 与系统实际提醒比较 → 取消旧项 + 发布缺失项 → 结构化结果。
+   * 只有「全部成功」或「本就没有需要提醒的时点」才写签名。
+   */
+  private static async syncLocked(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
+    vocab: ReminderVocab, now: number, force: boolean): Promise<ReminderSyncResult> {
     let capability: ReminderCapability = await ReminderService.probe(context, force, vocab);
+    const expected: ExpectedReminder[] = ReminderService.expectedReminders(plans, meds, now);
+    const signature: string = ReminderService.signatureOf(expected);
+    const base: ReminderSyncResult = {
+      expected: expected.length,
+      registered: 0,
+      failedKeys: [],
+      staleKeys: [],
+      status: 'complete',
+      errors: [],
+      capability: capability
+    };
 
-    // v1.14：通知未授权时，代理提醒（1700001）与本地通知都发不出去，如实返回，调用方负责提示用户。
-    // 通知已授权但探测未通过时**不直接放弃** —— 探测用 10 秒倒计时（TIMER），
-    // 真实提醒用每日闹钟（ALARM），两者失败原因可能不同，这里再按计划真实发布一次。
+    // 通知未授权且代理不可用：如实返回，调用方负责提示
     if (capability.mode !== ReminderMode.AGENT && !capability.notificationEnabled) {
       Logger.warn(TAG, `agent unavailable and notification disabled, skip publishing: ${capability.detail}`);
-      return capability;
+      base.status = 'permissionDenied';
+      base.failedKeys = expected.map((e: ExpectedReminder) => e.key);
+      return base;
     }
 
-    const signature: string = ReminderService.signature(plans, meds);
-    if (!force && ReminderService.cachedSignature(context) === signature) {
-      // 签名相同通常无需重建，但签名**与日期无关**、且发布失败时不会记签名：
-      // 若系统里其实一条有效提醒都没有（上次发布失败、被系统清理、或当天无时点却记了签名），
-      // 必须重建，否则会一直停在「看起来已设置」的状态（v1.14 自愈）
-      const existing: number = await ReminderService.validReminderCount();
-      if (existing > 0) {
-        Logger.info(TAG, 'plan signature unchanged, skip rebuilding reminders');
-        return capability;
-      }
-      Logger.warn(TAG, `signature unchanged but valid reminders=${existing}, rebuild anyway`);
+    const same: boolean = !force && ReminderService.cachedSignature(context) === signature
+      && await ReminderService.systemMatches(expected);
+    if (same) {
+      Logger.info(TAG, 'expected reminder set already registered, skip rebuilding');
+      base.registered = expected.length;
+      return base;
     }
 
     try {
       await reminderAgentManager.cancelAllReminders();
     } catch (err) {
       const e = err as BusinessError;
-      // 审查 R05.2：取消旧提醒失败时**不能**继续追加新提醒（会留下重复项，且旧项无人报告）。
-      // 这一轮就此终止，也不写签名 —— 下次协调会重试。
       Logger.error(TAG, `cancelAllReminders failed, abort this round: code=${e.code}, message=${e.message}`);
-      return capability;
+      base.status = 'failed';
+      base.staleKeys = expected.map((item: ExpectedReminder) => item.key);
+      base.errors.push(`cancelAllReminders failed: code=${e.code}`);
+      return base;
     }
 
-    const slots: SlotInstance[] = MedService.planSlotsOf(todayTs, plans, meds);
-    const groups: SlotGroup[] = MedService.groupBySlot(slots);
     const pkg: string = ReminderService.bundleName(context);
-
-    // 审查 R05.4：删掉 i<20 的静默截断 —— 期望集合里的每一条都要尝试登记，
-    // 失败的要如实计数并上报（不能用「前 20 条成功」冒充全部完成）。
-    let published: number = 0;
-    let failed: number = 0;
-    for (let i = 0; i < groups.length; i++) {
-      const group: SlotGroup = groups[i];
-      const minutes: number = DateUtils.minutesOfDay(group.scheduledTime);
-      const request: reminderAgentManager.ReminderRequestAlarm = {
-        reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_ALARM,
-        hour: Math.floor(minutes / 60),
-        minute: minutes % 60,
-        daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
-        title: vocab.title,
-        content: ReminderService.buildContent(group, vocab),
-        expiredContent: vocab.expiredContent,
-        snoozeContent: vocab.snoozeContent,
-        notificationId: ReminderConst.NOTIFICATION_BASE + i,
-        slotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
-        ringDuration: 5,
-        wantAgent: {
-          pkgName: pkg,
-          abilityName: 'EntryAbility'
-        },
-        actionButton: [
-          {
-            title: vocab.actionClose,
-            type: reminderAgentManager.ActionButtonType.ACTION_BUTTON_TYPE_CLOSE
-          }
-        ]
-      };
+    for (let i = 0; i < expected.length; i++) {
+      const item: ExpectedReminder = expected[i];
+      const hour: number = Math.floor(item.minutes / 60);
+      const minute: number = item.minutes % 60;
+      const want: reminderAgentManager.WantAgent = { pkgName: pkg, abilityName: 'EntryAbility' };
+      const notifId: number = ReminderConst.NOTIFICATION_BASE + i;
+      let request: reminderAgentManager.ReminderRequestAlarm | reminderAgentManager.ReminderRequestCalendar;
+      if (item.bounded) {
+        const cal: reminderAgentManager.ReminderRequestCalendar = {
+          reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_CALENDAR,
+          dateTime: ReminderService.localDateTime(item.firstTs),
+          daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+          title: vocab.title,
+          content: item.content,
+          expiredContent: vocab.expiredContent,
+          snoozeContent: vocab.snoozeContent,
+          notificationId: notifId,
+          slotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
+          ringDuration: 5,
+          wantAgent: want,
+          actionButton: [
+            { title: vocab.actionClose, type: reminderAgentManager.ActionButtonType.ACTION_BUTTON_TYPE_CLOSE }
+          ]
+        };
+        if (item.endTs > 0) {
+          cal.endDateTime = ReminderService.localDateTime(item.endTs);
+        }
+        request = cal;
+      } else {
+        const alarm: reminderAgentManager.ReminderRequestAlarm = {
+          reminderType: reminderAgentManager.ReminderType.REMINDER_TYPE_ALARM,
+          hour: hour,
+          minute: minute,
+          daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+          title: vocab.title,
+          content: item.content,
+          expiredContent: vocab.expiredContent,
+          snoozeContent: vocab.snoozeContent,
+          notificationId: notifId,
+          slotType: notificationManager.SlotType.SOCIAL_COMMUNICATION,
+          ringDuration: 5,
+          wantAgent: want,
+          actionButton: [
+            { title: vocab.actionClose, type: reminderAgentManager.ActionButtonType.ACTION_BUTTON_TYPE_CLOSE }
+          ]
+        };
+        request = alarm;
+      }
       try {
         await reminderAgentManager.publishReminder(request);
-        published++;
+        base.registered++;
       } catch (err) {
         const e = err as BusinessError;
-        failed++;
-        Logger.error(TAG, `publish slot reminder failed: code=${e.code}, message=${e.message}, slot=${group.scheduledTime}`);
+        base.failedKeys.push(item.key);
+        base.errors.push(`publish failed: code=${e.code}, key=${item.key}`);
+        Logger.error(TAG, `publish reminder failed: code=${e.code}, message=${e.message}, key=${item.key}`);
       }
     }
-    // 只有「确实发布成功」或「本就没有需要提醒的时点」才记签名：
-    // 否则下次切回前台会因签名相同而跳过重建，提醒永远补不回来（v1.14 修复）
-    // 审查 R05.1：只有**全部成功**（或本就没有需要提醒的时点）才写签名。
-    // 过去是 published>0 就写，于是「只成功了一部分」也算完成，缺失的那条再也不补。
-    if (failed === 0 || groups.length === 0) {
+
+    if (base.failedKeys.length === 0 || expected.length === 0) {
       ReminderService.saveSignature(context, signature);
+      base.status = 'complete';
+    } else if (base.registered === 0) {
+      base.status = 'failed';
     } else {
-      Logger.warn(TAG, `reminder sync incomplete: published=${published}, failed=${failed}, signature not cached`);
+      base.status = 'partial';
     }
-    // 真实发布成功却与探测结论不符：以实际结果为准修回 AGENT，避免把可用能力一直显示成不可用
-    if (published > 0 && capability.mode !== ReminderMode.AGENT) {
+
+    if (base.registered > 0 && capability.mode !== ReminderMode.AGENT) {
       Logger.info(TAG, 'real reminders published although probe failed, mode repaired to agent');
       ReminderService.saveMode(context, ReminderMode.AGENT);
       capability = {
@@ -363,9 +568,38 @@ export class ReminderService {
         notificationEnabled: true,
         detail: 'repaired: real publish succeeded'
       };
+      base.capability = capability;
     }
-    Logger.info(TAG, `reminders rebuilt: groups=${groups.length}, published=${published}, mode=${capability.mode}`);
-    return capability;
+    Logger.info(TAG, `reminder sync: expected=${base.expected}, registered=${base.registered}, status=${base.status}`);
+    return base;
+  }
+
+  /** 系统里的提醒是否已与期望集合一致（按业务键逐条比对，而不是只看条数） */
+  private static async systemMatches(expected: ExpectedReminder[]): Promise<boolean> {
+    try {
+      const list: Array<reminderAgentManager.ReminderInfo> = await reminderAgentManager.getAllValidReminders();
+      const actual: Set<string> = new Set<string>();
+      for (let i = 0; i < list.length; i++) {
+        const alarmReq: reminderAgentManager.ReminderRequestAlarm =
+          list[i].reminderReq as reminderAgentManager.ReminderRequestAlarm;
+        const hour: number = alarmReq.hour === undefined ? 0 : alarmReq.hour;
+        const minute: number = alarmReq.minute === undefined ? 0 : alarmReq.minute;
+        const minutes: number = hour * 60 + minute;
+        const content: string = alarmReq.content === undefined ? '' : alarmReq.content;
+        actual.add(`${minutes}#${content}`);
+      }
+      for (let i = 0; i < expected.length; i++) {
+        const item: ExpectedReminder = expected[i];
+        if (!actual.has(`${item.minutes}#${item.content}`)) {
+          return false;
+        }
+      }
+      return list.length >= expected.length;
+    } catch (err) {
+      const e = err as BusinessError;
+      Logger.warn(TAG, `read valid reminders failed: code=${e.code}, message=${e.message}`);
+      return false;
+    }
   }
 
   /**

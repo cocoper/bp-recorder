@@ -1295,7 +1295,7 @@ async function reviewScenarios(): Promise<void> {
       },
       flush: async () => {}
     });
-    agent['ReminderType'] = { REMINDER_TYPE_ALARM: 1, REMINDER_TYPE_TIMER: 0 };
+    agent['ReminderType'] = { REMINDER_TYPE_ALARM: 1, REMINDER_TYPE_TIMER: 0, REMINDER_TYPE_CALENDAR: 2 };
     agent['ActionButtonType'] = { ACTION_BUTTON_TYPE_CLOSE: 0 };
     notif['SlotType'] = { SOCIAL_COMMUNICATION: 0 };
     notif['ContentType'] = { NOTIFICATION_CONTENT_BASIC_TEXT: 0 };
@@ -1310,7 +1310,9 @@ async function reviewScenarios(): Promise<void> {
       return alarms.length;
     };
     // 只统计真实业务提醒（ALARM）；探测用的 10 秒 TIMER 不算
-    const business = (): Array<Record<string, unknown>> => alarms.filter((a) => a['reminderType'] === 1);
+    // 业务提醒 = 每日闹钟(1) + 日历型(2)；探测用的 10 秒 TIMER(0) 不算
+    const business = (): Array<Record<string, unknown>> =>
+      alarms.filter((a) => a['reminderType'] === 1 || a['reminderType'] === 2);
 
     const ctx = {
       abilityInfo: { bundleName: 'audit.memory.only' },
@@ -1400,6 +1402,31 @@ async function reviewScenarios(): Promise<void> {
       ctx as unknown as common.Context, 1, 't', 'c', 42);
     eq(returned, false, 'R05-b 通知失败必须返回 false');
     eq(memory.has(PrefKeys.CATCHUP_DATE), false, 'R05-b 通知失败不得写今日已发送标记');
+
+    // R04：明天才开始的长期间划，今天就要登记上（不再要求用户当天必须打开 App）
+    const tomorrowB: MedPlan = {
+      id: 30, medicationId: 2, timeSlots: ['18:00'], startDate: '2026-10-12', endDate: null,
+      isActive: true, createdAt: ts(2026, 10, 11, 7, 0), updatedAt: ts(2026, 10, 11, 7, 0)
+    };
+    await ReminderService.rebuildAll(ctx, [planA, tomorrowB], medsAB, vocab, now, true);
+    eq(business().length, 2, 'R04 明天开始的计划今天就登记（期望集合覆盖未来区间）');
+    const calCount: number = business().filter((a) => a['reminderType'] === 2).length;
+    eq(calCount, 1, 'R04 未来开始的计划用日历型提醒（可表达起点）');
+
+    // R03：有结束日期的计划 → 日历型 + endDateTime = 结束日当天 23:59（含 endDate）
+    const boundedPlan: MedPlan = {
+      id: 31, medicationId: 1, timeSlots: ['09:00'], startDate: '2026-10-01', endDate: '2026-10-20',
+      isActive: true, createdAt: ts(2026, 10, 1, 0, 0), updatedAt: ts(2026, 10, 1, 0, 0)
+    };
+    await ReminderService.rebuildAll(ctx, [boundedPlan], [med(1, '测试药1')], vocab, now, true);
+    eq(business().length, 1, 'R03 有结束日期的计划登记一条');
+    const boundedReq = business()[0];
+    eq(boundedReq['reminderType'], 2, 'R03 有结束日期的计划用日历型提醒');
+    const endDt = boundedReq['endDateTime'] as Record<string, unknown>;
+    eq(endDt['year'], 2026, 'R03 endDateTime 年份');
+    eq(endDt['month'], 10, 'R03 endDateTime 月份');
+    eq(endDt['day'], 20, 'R03 endDateTime 落在结束日当天（含 endDate）');
+    eq(endDt['hour'], 23, 'R03 endDateTime 到当天 23 时');
   }
 
   group('审查反例 R17（测试实例隔离）');

@@ -5,7 +5,7 @@ import { MedLimits } from '../common/Constants';
 import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { VocabFactory } from '../common/Vocab';
-import { Medication, MedicationDraft, MedPlan, MedPlanDraft } from '../model/Med';
+import { Medication, MedicationDraft, MedPlan, MedPlanDraft , ReminderSyncResult } from '../model/Med';
 import { BpDatabase, SaveMedicationPlanResult, TxSession } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
@@ -268,9 +268,9 @@ struct MedPlanEditPage {
       // 然后按**最新全量生效计划**协调提醒 —— 过去这里直接 cancelAll()，
       // 结果是把其他药品的提醒也一起取消了。
       await db.archiveMedication(this.medicationId, DateUtils.now());
-      const capability = await ReminderService.syncFromDatabase(this.context(), db,
+      const result: ReminderSyncResult = await ReminderService.syncFromDatabase(this.context(), db,
         VocabFactory.reminder(this.context()), DateUtils.now());
-      Logger.info(TAG, `plan deactivated: med=${this.medicationId}, reminder mode=${capability.mode}`);
+      Logger.info(TAG, `plan deactivated: med=${this.medicationId}, reminder status=${result.status}, registered=${result.registered}/${result.expected}`);
       this.toast($r('app.string.toast_med_archived'));
       router.back();
     } catch (err) {

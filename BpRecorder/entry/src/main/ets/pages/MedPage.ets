@@ -5,7 +5,7 @@ import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { ResUtils } from '../common/ResUtils';
 import { VocabFactory } from '../common/Vocab';
-import { Medication, MedListRow, MedPlan } from '../model/Med';
+import { Medication, MedListRow, MedPlan , ReminderSyncResult } from '../model/Med';
 import { BpDatabase } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
@@ -184,9 +184,9 @@ struct MedPage {
       await db.archiveMedication(row.medication.id, DateUtils.now());
       // 审查 R02：归档后必须按最新全量生效计划重新协调提醒（过去这里什么都不做，
       // 已归档药品的提醒会一直留在系统里）。
-      const capability = await ReminderService.syncFromDatabase(this.context(), db,
+      const result: ReminderSyncResult = await ReminderService.syncFromDatabase(this.context(), db,
         VocabFactory.reminder(this.context()), DateUtils.now());
-      Logger.info(TAG, `archived med=${row.medication.id}, reminder mode=${capability.mode}`);
+      Logger.info(TAG, `archived med=${row.medication.id}, reminder status=${result.status}, registered=${result.registered}/${result.expected}`);
       this.toast($r('app.string.toast_med_archived'));
       await this.load();
     } catch (err) {

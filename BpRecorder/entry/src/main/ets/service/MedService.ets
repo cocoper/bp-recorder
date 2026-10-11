@@ -161,6 +161,29 @@ export class MedService {
    *   - `endDate` = null / 空 / 非法 → **不命中**（视为长期计划；非法值沿用 isPlanActiveOn 的宽容处理）
    * 本函数只做判定、不写库；调用方负责置 `isActive = 0` 并清理未来 pending。
    */
+  /** "HH:mm" → 当天分钟数；格式非法返回 null（提醒协调用） */
+  static slotMinutes(slot: string): number | null {
+    const parts: string[] = slot.split(':');
+    if (parts.length !== 2) {
+      return null;
+    }
+    const hh: number = Number.parseInt(parts[0], 10);
+    const mm: number = Number.parseInt(parts[1], 10);
+    if (Number.isNaN(hh) || Number.isNaN(mm) || hh < 0 || hh > 23 || mm < 0 || mm > 59) {
+      return null;
+    }
+    return hh * 60 + mm;
+  }
+
+  /** 计划结束日的当天 23:59；无结束日期返回 null（长期计划用无限重复闹钟） */
+  static endInstantOf(plan: MedPlan): number | null {
+    if (plan.endDate === null || plan.endDate.length === 0) {
+      return null;
+    }
+    const ts: number | null = DateUtils.parseDate(plan.endDate);
+    return ts === null ? null : DateUtils.endOfDay(ts);
+  }
+
   static expiredPlanIds(plans: MedPlan[], today: string): number[] {
     const todayStart: number | null = DateUtils.parseDate(today);
     if (todayStart === null) {

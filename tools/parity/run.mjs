@@ -354,6 +354,40 @@ export namespace reminderAgentManager {
     wantAgent?: WantAgent;
     actionButton?: Array<ActionButton>;
   }
+  export interface LocalDateTime { year: number; month: number; day: number; hour: number; minute: number; second?: number }
+  export interface ReminderRequest {
+    reminderType?: ReminderType;
+    title?: string;
+    content?: string;
+    expiredContent?: string;
+    snoozeContent?: string;
+    notificationId?: number;
+    slotType?: number;
+    ringDuration?: number;
+    wantAgent?: object;
+    actionButton?: Array<object>;
+    hour?: number;
+    minute?: number;
+    daysOfWeek?: Array<number>;
+    endDateTime?: LocalDateTime;
+  }
+  export interface ReminderRequestCalendar {
+    reminderType: ReminderType;
+    dateTime: LocalDateTime;
+    repeatMonths?: Array<number>;
+    repeatDays?: Array<number>;
+    daysOfWeek?: Array<number>;
+    endDateTime?: LocalDateTime;
+    title?: string;
+    content?: string;
+    expiredContent?: string;
+    snoozeContent?: string;
+    notificationId?: number;
+    slotType?: number;
+    ringDuration?: number;
+    wantAgent?: object;
+    actionButton?: Array<object>;
+  }
   export interface ReminderRequestAlarm {
     reminderType: ReminderType;
     hour: number;
@@ -369,11 +403,11 @@ export namespace reminderAgentManager {
     wantAgent?: WantAgent;
     actionButton?: Array<ActionButton>;
   }
-  export function publishReminder(reminderReq: ReminderRequestTimer | ReminderRequestAlarm): Promise<number>;
+  export function publishReminder(reminderReq: ReminderRequestTimer | ReminderRequestAlarm | ReminderRequestCalendar): Promise<number>;
   export function cancelReminder(reminderId: number): Promise<void>;
   export function cancelAllReminders(): Promise<void>;
   export function getValidReminders(): Promise<Array<number>>;
-  export interface ReminderInfo { reminderId: number; reminderReq: ReminderRequestTimer | ReminderRequestAlarm }
+  export interface ReminderInfo { reminderId: number; reminderReq: ReminderRequest }
   export function getAllValidReminders(): Promise<Array<ReminderInfo>>;
 }
 `,

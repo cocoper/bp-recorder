@@ -109,6 +109,24 @@ export interface MedListRow {
 }
 
 /** 提醒方式探测结论（FR-9.1 / §5.9） */
+/** 一次提醒协调的结果（审查 R04/R05.1）：调用方据此判断「是不是真的都登记上了」 */
+export interface ReminderSyncResult {
+  /** 期望登记的提醒条数（业务键去重后） */
+  expected: number;
+  /** 系统里实际匹配上的条数 */
+  registered: number;
+  /** 登记失败的业务键 */
+  failedKeys: string[];
+  /** 取消失败的旧项（系统里残留、无人认领） */
+  staleKeys: string[];
+  /** complete / partial / failed / permissionDenied */
+  status: string;
+  /** 逐条错误描述（错误码 + 业务键） */
+  errors: string[];
+  /** 能力探测结果（沿用旧字段，供设置页与日志） */
+  capability: ReminderCapability;
+}
+
 export interface ReminderCapability {
   /** 最终选定的提醒方式 */
   mode: ReminderMode;
