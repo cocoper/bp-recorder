@@ -8,6 +8,7 @@ import { VocabFactory } from '../common/Vocab';
 import { Adherence, BpRecord, DistRow, MorningCompare, RangeStats } from '../model/BpRecord';
 import { MedLog } from '../model/Med';
 import { BpDatabase } from '../service/BpDatabase';
+import { RequestGuard } from '../common/RequestGuard';
 import { ExportService, ExportRangeKind } from '../service/ExportService';
 import { FileService } from '../service/FileService';
 import { MedService } from '../service/MedService';
@@ -20,6 +21,10 @@ const TAG: string = 'StatsPage';
 @Entry
 @Component
 struct StatsPage {
+
+  /** 审查 R12：过期响应不得覆盖新状态 */
+  private guard: RequestGuard = new RequestGuard();
+
   @State private days: number = 7;
   @State private stats: RangeStats = {
     count: 0, sysMean: 0, diaMean: 0, hrMean: null,
@@ -40,7 +45,12 @@ struct StatsPage {
     this.load();
   }
 
-  onPageShow(): void {
+    aboutToDisappear(): void {
+    // 审查 R12：销毁后任何在途响应都不得再改视图
+    this.guard.dispose();
+  }
+
+onPageShow(): void {
     this.load();
   }
 
@@ -49,12 +59,20 @@ struct StatsPage {
   }
 
   private async load(): Promise<void> {
+    const token: number = this.guard.next();
+    if (token < 0) {
+      return;
+    }
     const now: number = DateUtils.now();
-    const range = StatsService.lastDaysRange(this.days, now);
+    const days: number = this.days;                    // 本次请求的不可变快照
+    const range = StatsService.lastDaysRange(days, now);
     try {
       const db: BpDatabase = BpDatabase.getInstance();
       const records: BpRecord[] = await db.queryBpBetween(range.start, range.end);
       const logs: MedLog[] = await db.queryMedLogsBetween(range.start, range.end);
+      if (!this.guard.isCurrent(token)) {
+        return;                                        // 过期响应：不提交任何视图状态
+      }
 
       this.stats = StatsService.rangeStats(records);
       this.distribution = StatsService.gradeDistribution(records);

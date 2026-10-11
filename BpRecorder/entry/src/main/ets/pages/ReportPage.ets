@@ -8,6 +8,7 @@ import { ReportVocab, VocabFactory } from '../common/Vocab';
 import { BpRecord, DateRange, DistRow } from '../model/BpRecord';
 import { AbnormalItem, MedLog, MedPlan, ReportData } from '../model/Med';
 import { BpDatabase } from '../service/BpDatabase';
+import { RequestGuard } from '../common/RequestGuard';
 import { FileService } from '../service/FileService';
 import { ReportService } from '../service/ReportService';
 import { ShareService } from '../service/ShareService';
@@ -28,7 +29,9 @@ const CAPTURE_ID: string = 'bp_report_capture';
 @Entry
 @Component
 struct ReportPage {
-  @State private kind: string = ReportKind.WEEK;
+
+  /** 审查 R12：过期响应不得覆盖新报告 */
+  private guard: RequestGuard = new RequestGuard();  @State private kind: string = ReportKind.WEEK;
   @State private rangeLabel: string = '';
   @State private report: ReportData | null = null;
   @State private busy: boolean = false;
@@ -105,6 +108,13 @@ struct ReportPage {
   }
 
   private async load(range: DateRange): Promise<void> {
+    const token: number = this.guard.next();
+    if (token < 0) {
+      return;
+    }
+    // 审查 R12：捕获本次请求的不可变快照 —— 加载期间用户改周期标签不会串进本次结果
+    const kind: string = this.kind;
+    const now: number = DateUtils.now();
     this.busy = true;
     this.range = range;
     this.rangeLabel = range.label;
@@ -117,14 +127,24 @@ struct ReportPage {
       const plans: MedPlan[] = await db.queryActivePlans();
       const vocab: ReportVocab = VocabFactory.report(this.context());
       // 周期内无血压数据时返回 null，页面提示「该周期暂无数据」（FR-10.4）
-      this.report = ReportService.build(this.kind, range, records, logs, plans, vocab, DateUtils.now());
+      const report: ReportData | null = ReportService.build(kind, range, records, logs, plans, vocab, now);
+      if (!this.guard.isCurrent(token)) {
+        return;                                            // 过期响应：不提交（含不覆盖 busy）
+      }
+      this.report = report;
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `build report failed: code=${e.code}, message=${e.message}`);
+      if (!this.guard.isCurrent(token)) {
+        return;
+      }
+      // 失败时不保留旧报告配新标签：清空并如实提示
       this.report = null;
       this.toast($r('app.string.error_db_read'));
     } finally {
-      this.busy = false;
+      if (this.guard.isCurrent(token)) {
+        this.busy = false;
+      }
     }
   }
 
@@ -133,7 +153,19 @@ struct ReportPage {
     return ShareService.packPng(pixelMap);
   }
 
+  /**
+   * 分享/打印的前置条件（审查 R12）：不在加载中、且当前已有报告数据。
+   * 否则截图可能把「新周期标签 + 旧报告内容」混在一起导出。
+   */
+  private canExport(): boolean {
+    return !this.busy && this.report !== null;
+  }
+
   private async shareReport(): Promise<void> {
+    if (!this.canExport()) {
+      this.toast($r('app.string.report_not_ready'));
+      return;
+    }
     try {
       const pixelMap = await ShareService.snapshot(CAPTURE_ID);
       const fileName: string = FileService.stampName('bp_report_', '.png', DateUtils.now());
@@ -147,6 +179,10 @@ struct ReportPage {
   }
 
   private async printReport(): Promise<void> {
+    if (!this.canExport()) {
+      this.toast($r('app.string.report_not_ready'));
+      return;
+    }
     try {
       const pixelMap = await ShareService.snapshot(CAPTURE_ID);
       await ShareService.printImage(this.context(), pixelMap,

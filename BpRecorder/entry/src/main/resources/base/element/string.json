@@ -1425,6 +1425,10 @@
       "value": "用药小结"
     },
     {
+      "name": "report_not_ready",
+      "value": "报告还没准备好，请稍候再试"
+    },
+    {
       "name": "report_med_pending_not_due",
       "value": "本期义务尚未到点，暂无到期打卡"
     },

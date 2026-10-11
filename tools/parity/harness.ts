@@ -3,6 +3,7 @@
 import './preload';
 import { DateUtils } from './src/common/DateUtils';
 import { Csv } from './src/common/Csv';
+import { RequestGuard } from './src/common/RequestGuard';
 import { GradeService } from './src/service/GradeService';
 import { StatsService } from './src/service/StatsService';
 import { MedService } from './src/service/MedService';
@@ -1583,6 +1584,20 @@ async function reviewScenarios(): Promise<void> {
     const pv2 = ImportService.parseMedTable(Csv.parse(csv), VOCAB,
       ImportService.buildMedKeySet(realTuples), nameToId, ImportService.buildMedPendingKeySet(realTuples));
     eq(pv2.drafts.length, 0, 'R10-b 已有真实打卡时仍判重复（不重复入库）');
+  }
+
+  group('审查反例 R12（异步请求不得过期覆盖）');
+  {
+    const guard = new RequestGuard();
+    const first: number = guard.next();
+    const second: number = guard.next();
+    eq(guard.isCurrent(first), false, 'R12 先发的请求在后者发出后即失效');
+    eq(guard.isCurrent(second), true, 'R12 只有最后发出的请求可以提交视图状态');
+    eq(guard.isCurrent(999), false, 'R12 未知 token 一律不提交');
+    guard.dispose();
+    eq(guard.next(), -1, 'R12 页面销毁后不再接受新请求');
+    eq(guard.isCurrent(second), false, 'R12 销毁后在途响应不得改视图');
+    eq(guard.isDisposed(), true, 'R12 销毁状态可查询');
   }
 
   group('审查反例 R17（测试实例隔离）');
