@@ -312,7 +312,9 @@ export class CsvHeaderRes {
     $r('app.string.csv_hdr_diastolic'),
     $r('app.string.csv_hdr_heart_rate'),
     $r('app.string.csv_hdr_period'),
-    $r('app.string.csv_hdr_note')
+    $r('app.string.csv_hdr_note'),
+    // v1.20（审查 R08）：精确时间戳列。旧文件没有这一列，导入时按「只有分钟精度」处理并提示。
+    $r('app.string.csv_hdr_timestamp')
   ];
 
   static readonly MED: Resource[] = [

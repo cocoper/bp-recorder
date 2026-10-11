@@ -66,7 +66,9 @@ export class ExportService {
         `${r.diastolic}`,
         r.heartRate === null || r.heartRate === undefined ? '' : `${r.heartRate}`,
         periodCsvName(vocab, r.period),
-        r.note === null || r.note === undefined ? '' : r.note
+        r.note === null || r.note === undefined ? '' : r.note,
+        // 精确 measure_time（毫秒）：保证「导出 → 原样回导」判重幂等，且同分钟的两条真实记录不被合并
+        `${r.measureTime}`
       ]);
     }
     return Csv.stringify(rows, true);

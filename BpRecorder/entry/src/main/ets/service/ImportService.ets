@@ -35,6 +35,8 @@ export interface BpImportPreview {
   previewLines: string[];
   /** 数据行总数（不含表头） */
   totalRows: number;
+  /** 旧格式（无毫秒时间戳列）的行数：>0 时界面应提示「仅分钟精度」（审查 R08） */
+  legacyMinuteRows?: number;
 }
 
 /** 用药打卡导入草稿 */
@@ -139,6 +141,8 @@ export class ImportService {
     const previewLines: string[] = [];
     const seen: Set<string> = new Set<string>();
     let duplicateCount: number = 0;
+    /** 旧格式（无毫秒时间戳列）的行数：这些行只能按分钟精度解析 */
+    let legacyMinuteRows: number = 0;
 
     let start: number = 0;
     if (data.length > 0 && ImportService.isBpHeader(data[0], vocab)) {
@@ -162,7 +166,20 @@ export class ImportService {
 
       const dateStr: string = Csv.cell(row, 0);
       const timeStr: string = Csv.cell(row, 1);
-      const measureTime: number | null = DateUtils.parseDateTime(dateStr, timeStr);
+      // 审查 R08：新版文件带精确毫秒时间戳，优先用它（保证原样回导判重、同分钟不同秒不合并）；
+      // 旧文件没有这一列，退回「日期+时间」解析 —— 只有分钟精度，导入预览里会明确提示。
+      let measureTime: number | null = null;
+      const exactText: string = row.length > 7 ? Csv.cell(row, row.length - 1) : '';
+      if (exactText.length > 0) {
+        const exact: number = Number.parseInt(exactText, 10);
+        if (!Number.isNaN(exact) && exact > 1000000000000) {
+          measureTime = exact;
+        }
+      }
+      if (measureTime === null) {
+        measureTime = DateUtils.parseDateTime(dateStr, timeStr);
+        legacyMinuteRows++;
+      }
       if (measureTime === null) {
         errors.push({
           lineNo: lineNo,
@@ -224,7 +241,9 @@ export class ImportService {
       duplicateCount: duplicateCount,
       errors: errors,
       previewLines: previewLines,
-      totalRows: totalRows
+      totalRows: totalRows,
+      // 旧格式（无毫秒时间戳列）的行数：界面据此提示「仅分钟精度」（审查 R08）
+      legacyMinuteRows: legacyMinuteRows
     };
   }
 

@@ -24,7 +24,6 @@
       "name": "reason_print",
       "value": "用于将周期报告通过系统打印界面输出为 PDF"
     },
-
     {
       "name": "placeholder_empty",
       "value": ""
@@ -65,7 +64,6 @@
       "name": "percent_value",
       "value": "%s"
     },
-
     {
       "name": "action_back",
       "value": "返回"
@@ -118,7 +116,6 @@
       "name": "action_got_it",
       "value": "知道了"
     },
-
     {
       "name": "nav_chart",
       "value": "图表"
@@ -139,7 +136,6 @@
       "name": "nav_settings",
       "value": "设置"
     },
-
     {
       "name": "index_total",
       "value": "共 %d 条记录"
@@ -172,7 +168,6 @@
       "name": "today_no_bp",
       "value": "今天还没有测量记录"
     },
-
     {
       "name": "grade_normal",
       "value": "正常"
@@ -201,7 +196,6 @@
       "name": "grade_standard_home",
       "value": "家庭自测血压 135/85"
     },
-
     {
       "name": "advice_normal",
       "value": "本次血压正常，请保持规律监测。"
@@ -222,7 +216,6 @@
       "name": "advice_grade_3",
       "value": "⚠ 本次血压重度升高，请静坐休息 5 分钟后复测；若复测仍在此范围或伴有头晕胸闷等症状，请立即就医。"
     },
-
     {
       "name": "period_morning",
       "value": "晨起"
@@ -243,7 +236,6 @@
       "name": "period_other",
       "value": "其他"
     },
-
     {
       "name": "warn_icon",
       "value": "⚠"
@@ -260,7 +252,6 @@
       "name": "warn_detail",
       "value": "近 %d 天平均血压达到家庭自测高血压界值（135/85 mmHg），建议持续监测并咨询医生。"
     },
-
     {
       "name": "disclaimer_title",
       "value": "免责声明"
@@ -281,7 +272,6 @@
       "name": "disclaimer_full",
       "value": "本 App 提示仅供参考，不构成医疗诊断，如有不适请及时就医。\n本 App 不提供用药建议，请严格遵医嘱服药。\n所有数据仅保存在本机，不上传至任何服务器。"
     },
-
     {
       "name": "title_new_record",
       "value": "记录血压"
@@ -350,7 +340,6 @@
       "name": "title_settings",
       "value": "设置"
     },
-
     {
       "name": "field_systolic",
       "value": "收缩压（高压）"
@@ -407,7 +396,6 @@
       "name": "note_placeholder",
       "value": "如：服药后、运动后"
     },
-
     {
       "name": "err_sys_required",
       "value": "请填写收缩压"
@@ -504,7 +492,6 @@
       "name": "err_end_before_start",
       "value": "结束日期不能早于开始日期"
     },
-
     {
       "name": "err_imp_missing_column",
       "value": "列数不足，缺少必填列"
@@ -529,7 +516,6 @@
       "name": "err_imp_unknown",
       "value": "数据格式无法识别"
     },
-
     {
       "name": "error_db_init",
       "value": "数据库初始化失败，数据功能暂不可用。请重启应用后重试。"
@@ -570,7 +556,6 @@
       "name": "error_print",
       "value": "调起打印失败"
     },
-
     {
       "name": "chart_empty",
       "value": "暂无数据，请先记录"
@@ -639,7 +624,6 @@
       "name": "share_chart_title",
       "value": "血压趋势图"
     },
-
     {
       "name": "metric_count",
       "value": "测量次数"
@@ -732,7 +716,6 @@
       "name": "adherence_no_data",
       "value": "本周期无服药记录"
     },
-
     {
       "name": "export_bp_csv",
       "value": "导出数据 CSV"
@@ -777,7 +760,6 @@
       "name": "toast_export_done",
       "value": "已导出 %d 条记录"
     },
-
     {
       "name": "csv_hdr_date",
       "value": "日期"
@@ -805,6 +787,10 @@
     {
       "name": "csv_hdr_note",
       "value": "备注"
+    },
+    {
+      "name": "csv_hdr_timestamp",
+      "value": "时间戳(毫秒)"
     },
     {
       "name": "csv_hdr_plan_time",
@@ -866,7 +852,6 @@
       "name": "csv_slot_separator",
       "value": ";"
     },
-
     {
       "name": "import_type_bp",
       "value": "血压记录"
@@ -951,7 +936,6 @@
       "name": "import_hint",
       "value": "导入按「测量时间 + 收缩压 + 舒张压」判重，重复行自动跳过；格式错误行逐行提示且不影响其它行入库。整个导入在一个事务内完成，失败不会产生半批数据。"
     },
-
     {
       "name": "import_type_auto",
       "value": "其他来源"
@@ -1048,7 +1032,6 @@
       "name": "err_imp_bp_invalid",
       "value": "血压数值无法识别（需为整数，或「收缩压/舒张压」形式）"
     },
-
     {
       "name": "imp_role_names",
       "value": "日期时间|日期|时间|收缩压|舒张压|血压|心率|时段|备注|药品|剂量|状态|实际打卡时间|时间点|每日次数|开始日期|结束日期"
@@ -1141,7 +1124,6 @@
       "name": "imp_status_makeup",
       "value": "补记|补录|补打卡|补登"
     },
-
     {
       "name": "today_med_title",
       "value": "今日服药"
@@ -1242,7 +1224,6 @@
       "name": "toast_med_archived",
       "value": "已停用"
     },
-
     {
       "name": "checkin_title",
       "value": "%s 服药时间到"
@@ -1267,7 +1248,6 @@
       "name": "checkin_hint",
       "value": "已过计划时间可补记，补记将在统计中标注。"
     },
-
     {
       "name": "reminder_title",
       "value": "服药提醒"
@@ -1352,7 +1332,6 @@
       "name": "toast_notification_denied",
       "value": "通知未授权，服药提醒将无法送达"
     },
-
     {
       "name": "report_week",
       "value": "周报"
@@ -1449,7 +1428,6 @@
       "name": "toast_saved_album",
       "value": "已保存到相册"
     },
-
     {
       "name": "settings_reminder_mode",
       "value": "服药提醒"
@@ -1514,7 +1492,6 @@
       "name": "toast_standard_changed",
       "value": "参考口径已切换"
     },
-
     {
       "name": "delete_confirm_title",
       "value": "删除确认"

@@ -570,7 +570,7 @@ eq(Csv.normalize(Csv.parse('a,b\n\n \n c,d\n')).length, 2, 'normalize 去除空�
 // 说明：本节的 CSV 文案词表由用例直接构造（真实运行时由 VocabFactory 从资源解析），
 // 词表内容与 resources 中 zh_CN 的字面量一致，因此往返结论对真实环境同样成立。
 const VOCAB: CsvVocab = {
-  bpHeaders: ['日期', '时间', '收缩压(mmHg)', '舒张压(mmHg)', '心率(bpm)', '时段', '备注'],
+  bpHeaders: ['日期', '时间', '收缩压(mmHg)', '舒张压(mmHg)', '心率(bpm)', '时段', '备注', '时间戳(毫秒)'],
   medHeaders: ['日期', '计划时间', '药品', '剂量', '状态', '实际打卡时间', '备注'],
   planHeaders: ['药品', '剂量', '每日次数', '时间点', '开始日期', '结束日期', '备注'],
   slotSeparator: ';',
@@ -1427,6 +1427,30 @@ async function reviewScenarios(): Promise<void> {
     eq(endDt['month'], 10, 'R03 endDateTime 月份');
     eq(endDt['day'], 20, 'R03 endDateTime 落在结束日当天（含 endDate）');
     eq(endDt['hour'], 23, 'R03 endDateTime 到当天 23 时');
+  }
+
+  group('审查反例 R08（血压 CSV 精确时间往返）');
+  {
+    const base: number = ts(2026, 10, 11, 8, 30) + 45123; // 08:30:45.123
+    const r1: BpRecord = rec(base, 120, 80, 70, 1);
+    const csv: string = ExportService.buildBpCsv([r1], VOCAB);
+    const preview = ImportService.parseBpTable(Csv.parse(csv), VOCAB,
+      new Set<string>([ImportService.bpKey(r1.measureTime, r1.systolic, r1.diastolic)]));
+    eq(preview.drafts.length, 0, 'R08-a 含毫秒的记录原样回导：0 新增');
+    eq(preview.duplicateCount, 1, 'R08-a 判为 1 条重复');
+
+    const r2: BpRecord = rec(ts(2026, 10, 11, 8, 30) + 10000, 120, 80, 70, 2);
+    const r3: BpRecord = rec(ts(2026, 10, 11, 8, 30) + 40000, 120, 80, 70, 3);
+    const two: number = ImportService.parseBpTable(
+      Csv.parse(ExportService.buildBpCsv([r2, r3], VOCAB)), VOCAB, new Set<string>()).drafts.length;
+    eq(two, 2, 'R08-b 同一分钟两条独立记录换机恢复不合并');
+
+    const legacy: string = `${VOCAB.bpHeaders.slice(0, 7).join(',')}\n` +
+      `2026-10-11,08:30,120,80,70,${VOCAB.periodMorning},`;
+    const legacyPreview = ImportService.parseBpTable(Csv.parse(legacy), VOCAB, new Set<string>());
+    eq(legacyPreview.drafts.length, 1, 'R08 旧格式（无时间戳列）仍可导入');
+    const legacyRows: number = legacyPreview.legacyMinuteRows === undefined ? 0 : legacyPreview.legacyMinuteRows;
+    eq(legacyRows, 1, 'R08 旧格式行被标记为「仅分钟精度」，如实告知而不是假装精确');
   }
 
   group('审查反例 R17（测试实例隔离）');
