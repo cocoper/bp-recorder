@@ -18,7 +18,7 @@ const COLS_BP: string[] = [
   'user_id', 'source', 'created_at', 'updated_at'
 ];
 const COLS_MED: string[] = ['id', 'name', 'dosage', 'note', 'is_active', 'created_at', 'updated_at'];
-const COLS_PLAN: string[] = ['id', 'medication_id', 'time_slots', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at'];
+const COLS_PLAN: string[] = ['id', 'medication_id', 'time_slots', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at', 'effective_from', 'effective_to'];
 const COLS_LOG: string[] = ['id', 'medication_id', 'med_name', 'dosage', 'scheduled_time', 'taken_time', 'status', 'note', 'created_at', 'updated_at'];
 
 /** 建表语句（严格对齐策划文档 §3.1） */
@@ -55,7 +55,10 @@ const DDL: string[] = [
      end_date      TEXT,
      is_active     INTEGER NOT NULL DEFAULT 1,
      created_at    INTEGER NOT NULL,
-     updated_at    INTEGER NOT NULL
+     updated_at    INTEGER NOT NULL,
+     -- v3（审查 R01.3）：显式有效区间，避免「有效区间」只靠 start_date/created_at/updated_at 推导
+     effective_from INTEGER NOT NULL DEFAULT 0,
+     effective_to   INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS idx_plan_med ON med_plan (medication_id)`,
   `CREATE TABLE IF NOT EXISTS med_log (
@@ -313,6 +316,20 @@ export class BpDatabase implements BackupTarget {
           `CREATE UNIQUE INDEX IF NOT EXISTS uidx_plan_active_med
              ON ${DbConst.T_PLAN} (medication_id) WHERE is_active = 1`
         );
+      }
+
+      if (current < 3) {
+        // ── v2 → v3（审查 R01.3）──
+        // 「有效区间」过去只靠 start_date/created_at/updated_at 推导，口径散落在各处；
+        // v3 起作为显式列持久化。全新库的 DDL 已包含这两列，故先探测再 ALTER（幂等）。
+        if (!await BpDatabase.hasColumn(store, DbConst.T_PLAN, 'effective_from')) {
+          await store.executeSql(
+            `ALTER TABLE ${DbConst.T_PLAN} ADD COLUMN effective_from INTEGER NOT NULL DEFAULT 0`);
+        }
+        if (!await BpDatabase.hasColumn(store, DbConst.T_PLAN, 'effective_to')) {
+          await store.executeSql(`ALTER TABLE ${DbConst.T_PLAN} ADD COLUMN effective_to INTEGER`);
+        }
+        await BpDatabase.backfillPlanWindows(store);
       }
 
       await store.executeSql(`PRAGMA user_version = ${DbConst.SCHEMA_VERSION}`);
@@ -768,7 +785,10 @@ export class BpDatabase implements BackupTarget {
       'end_date': draft.endDate,
       'is_active': 1,
       'created_at': now,
-      'updated_at': now
+      'updated_at': now,
+      // 审查 R01.3：写入时就把有效区间定下来（起点不得早于保存时刻；终点 = 结束日 23:59 或长期）
+      'effective_from': BpDatabase.planEffectiveFrom(draft.startDate, now),
+      'effective_to': BpDatabase.planEffectiveTo(draft.endDate)
     };
     return store.insert(DbConst.T_PLAN, values);
     });
@@ -776,9 +796,12 @@ export class BpDatabase implements BackupTarget {
 
   private async deactivatePlansOf(medicationId: number, tx?: TxSession): Promise<number> {
     return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
+    const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
       'is_active': 0,
-      'updated_at': DateUtils.now()
+      'updated_at': now,
+      // 审查 R01.3：停用即收口有效区间（旧数据未回填时为 0/null，由调用方按既有列推导）
+      'effective_to': now
     };
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_PLAN);
     predicates.equalTo('medication_id', medicationId);
@@ -834,6 +857,82 @@ export class BpDatabase implements BackupTarget {
     return items;
   }
 
+  /** 有效区间起点：max(start_date 00:00, 保存时刻)（审查 R01.3） */
+  static planEffectiveFrom(startDate: string, now: number): number {
+    const startTs: number | null = DateUtils.parseDate(startDate);
+    const start: number = startTs === null ? now : startTs;
+    return start > now ? start : now;
+  }
+
+  /** 有效区间终点：有结束日期 → 结束日 23:59；长期 → null */
+  static planEffectiveTo(endDate: string | null): number | null {
+    if (endDate === null || endDate === undefined || endDate.length === 0) {
+      return null;
+    }
+    const ts: number | null = DateUtils.parseDate(endDate);
+    return ts === null ? null : DateUtils.endOfDay(ts);
+  }
+
+  /** 迁移时回填历史计划的有效区间（审查 R01.3）：旧数据按既有列推导一次并落盘 */
+  private static async backfillPlanWindows(store: relationalStore.RdbStore): Promise<void> {
+    const rs: relationalStore.ResultSet = await store.querySql(
+      `SELECT id, start_date, end_date, is_active, created_at, updated_at FROM ${DbConst.T_PLAN}`);
+    const ids: number[] = [];
+    const froms: number[] = [];
+    const tos: number[] = [];
+    try {
+      while (rs.goToNextRow()) {
+        const id: number = rs.getLong(rs.getColumnIndex('id'));
+        const startDate: string = rs.getString(rs.getColumnIndex('start_date'));
+        const endIdx: number = rs.getColumnIndex('end_date');
+        const endDate: string | null = rs.isColumnNull(endIdx) ? null : rs.getString(endIdx);
+        const active: boolean = rs.getLong(rs.getColumnIndex('is_active')) === 1;
+        const created: number = rs.getLong(rs.getColumnIndex('created_at'));
+        const updated: number = rs.getLong(rs.getColumnIndex('updated_at'));
+        const startTs: number | null = DateUtils.parseDate(startDate);
+        const start: number = startTs === null ? created : startTs;
+        const from: number = start > created ? start : created;
+        let to: number = 0;
+        const endBound: number | null = BpDatabase.planEffectiveTo(endDate);
+        if (endBound !== null) {
+          to = endBound;
+        }
+        if (!active) {
+          const closed: number = updated > 0 ? updated : created;
+          if (to === 0 || closed < to) {
+            to = closed;
+          }
+        }
+        ids.push(id);
+        froms.push(from);
+        tos.push(to);
+      }
+    } finally {
+      rs.close();
+    }
+    for (let i = 0; i < ids.length; i++) {
+      await store.executeSql(
+        `UPDATE ${DbConst.T_PLAN} SET effective_from = ?, effective_to = ? WHERE id = ?`,
+        [froms[i], tos[i] === 0 ? null : tos[i], ids[i]]);
+    }
+    Logger.info(TAG, `backfilled plan windows: ${ids.length}`);
+  }
+
+  /** 列是否存在（迁移的幂等前提：全新库由 DDL 直接建出 v3 列，不能再 ALTER） */
+  private static async hasColumn(store: relationalStore.RdbStore, table: string, column: string): Promise<boolean> {
+    const rs: relationalStore.ResultSet = await store.querySql(`PRAGMA table_info(${table})`);
+    try {
+      while (rs.goToNextRow()) {
+        if (rs.getString(rs.getColumnIndex('name')) === column) {
+          return true;
+        }
+      }
+    } finally {
+      rs.close();
+    }
+    return false;
+  }
+
   private static mapPlan(rs: relationalStore.ResultSet): MedPlan {
     const endIdx: number = rs.getColumnIndex('end_date');
     const slotsRaw: string = rs.getString(rs.getColumnIndex('time_slots'));
@@ -845,7 +944,10 @@ export class BpDatabase implements BackupTarget {
       endDate: rs.isColumnNull(endIdx) ? null : rs.getString(endIdx),
       isActive: rs.getLong(rs.getColumnIndex('is_active')) === 1,
       createdAt: rs.getLong(rs.getColumnIndex('created_at')),
-      updatedAt: rs.getLong(rs.getColumnIndex('updated_at'))
+      updatedAt: rs.getLong(rs.getColumnIndex('updated_at')),
+      effectiveFrom: rs.getLong(rs.getColumnIndex('effective_from')),
+      effectiveTo: rs.isColumnNull(rs.getColumnIndex('effective_to'))
+        ? null : rs.getLong(rs.getColumnIndex('effective_to'))
     };
   }
 

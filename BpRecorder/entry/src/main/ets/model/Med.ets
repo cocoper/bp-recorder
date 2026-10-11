@@ -35,6 +35,16 @@ export interface MedPlan {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+  /**
+   * 计划有效区间起点（审查 R01.3，schema v3 起持久化）。
+   * 0 表示「旧数据尚未回填」——调用方按既有列推导（max(startDate, createdAt)）。
+   */
+  effectiveFrom?: number;
+  /**
+   * 计划有效区间终点（审查 R01.3）。null / undefined = 长期无终点；
+   * 有结束日期时为结束日 23:59，被停用时为停用时刻。
+   */
+  effectiveTo?: number | null;
 }
 
 /** 计划草稿 */

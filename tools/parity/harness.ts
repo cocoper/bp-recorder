@@ -1281,6 +1281,29 @@ async function reviewScenarios(): Promise<void> {
       id: 16, medicationId: 2, timeSlots: ['08:00'], startDate: '2026-01-01', endDate: null,
       isActive: true, createdAt: ts(2026, 1, 1, 0, 0), updatedAt: ts(2026, 1, 1, 0, 0)
     };
+    // R01.3：有效区间改为显式列后，调用方必须**优先**采信持久化值（0/null 才退回推导）
+    const persisted: MedPlan = {
+      id: 17, medicationId: 1, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: ts(2026, 1, 1, 0, 0), updatedAt: ts(2026, 1, 1, 0, 0),
+      effectiveFrom: ts(2026, 10, 5, 0, 0), effectiveTo: ts(2026, 10, 7, 23, 59)
+    };
+    eq(MedLifecycleService.effectiveFrom(persisted), ts(2026, 10, 5, 0, 0),
+      'R01.3 生效起点优先取持久化列（不再按 startDate 倒推）');
+    eq(MedLifecycleService.effectiveTo(persisted, ts(2026, 10, 6, 12, 0)), ts(2026, 10, 7, 23, 59),
+      'R01.3 区间终点早于生成窗口时以持久化列为准');
+    const openEnded: MedPlan = {
+      id: 18, medicationId: 1, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: ts(2026, 10, 1, 0, 0), updatedAt: ts(2026, 10, 1, 0, 0),
+      effectiveFrom: ts(2026, 10, 1, 0, 0), effectiveTo: null
+    };
+    eq(MedLifecycleService.effectiveTo(openEnded, ts(2026, 10, 6, 12, 0)),
+      DateUtils.endOfDay(DateUtils.addDays(ts(2026, 10, 6, 12, 0), MedLimits.PRE_GEN_DAYS)),
+      'R01.3 长期计划（effective_to = null）仍用滚动生成窗口');
+    eq(MedLifecycleService.effectiveFrom({ id: 19, medicationId: 1, timeSlots: ['08:00'],
+      startDate: '2026-10-01', endDate: null, isActive: true, createdAt: ts(2026, 9, 20, 0, 0),
+      updatedAt: 0, effectiveFrom: 0 }), ts(2026, 10, 1, 0, 0),
+      'R01.3 未回填（effective_from = 0）时退回既有列推导，口径不漂移');
+
     eq(MedLifecycleService.obligations([ancient], medsR01, ts(2026, 10, 11, 12, 0)).length, 38,
       'R01 回补上限：200 天未打开也只补 30 天 + 未来 7 天 = 38 条，不倒造多年漏服');
   }

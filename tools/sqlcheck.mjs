@@ -74,8 +74,8 @@ const T = {
 };
 const SCHEMA_VERSION = constOf('SCHEMA_VERSION');
 
-if (SCHEMA_VERSION !== 2) {
-  throw new Error(`本校验针对 v2 结构编写，但 Constants.ets 中 SCHEMA_VERSION=${SCHEMA_VERSION}`);
+if (SCHEMA_VERSION !== 3) {
+  throw new Error(`本校验针对 v3 结构编写，但 Constants.ets 中 SCHEMA_VERSION=${SCHEMA_VERSION}`);
 }
 
 /** 把模板字符串里的 ${DbConst.XXX} 替换为真实值 */
@@ -124,6 +124,8 @@ const MIG_CLEAN_PLAN = MIGRATE_STATEMENTS.find((s) => /^\s*UPDATE/i.test(s));
 const MIG_IDX_TRIPLE = MIGRATE_STATEMENTS.find((s) => /uidx_bp_triple/.test(s));
 const MIG_IDX_PLAN = MIGRATE_STATEMENTS.find((s) => /uidx_plan_active_med/.test(s));
 const MIG_PRAGMA = MIGRATE_STATEMENTS.find((s) => /PRAGMA\s+user_version/i.test(s));
+// v3：把「计划有效区间」变成显式列的 ALTER（审查 R01.3）
+const MIG_ALTERS = MIGRATE_STATEMENTS.filter((s) => /^\s*ALTER\s+TABLE/i.test(s));
 
 if (!MIG_CLEAN_BP || !MIG_CLEAN_PLAN || !MIG_IDX_TRIPLE || !MIG_IDX_PLAN || !MIG_PRAGMA) {
   throw new Error('迁移语句提取不完整，请检查 BpDatabase.migrate() 是否被改动');
@@ -374,7 +376,73 @@ if (failures.length > 0) {
     console.log(`  ✗ ${f}`);
   }
   console.log('');
-  console.log('================ 结论 ================');
+  
+// ═══════════════════ 5. v2 → v3：显式有效区间列（审查 R01.3） ═══════════════════
+group('迁移 v2 → v3（计划有效区间显式化）');
+
+ok(MIG_ALTERS.length >= 2, `migrate() 中提取到 ${MIG_ALTERS.length} 条 ALTER（应含 effective_from / effective_to）`);
+
+function columnNames(db, table) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().map((r) => r.name);
+}
+
+// 迁移前的 v2 库里没有这两列 —— 先造一个「v2 库」验证 ALTER 的效果
+const v2db = new DatabaseSync(':memory:');
+for (const sql of DDL_STATEMENTS) {
+  v2db.exec(sql);
+}
+// 模拟旧库：把 v3 列删掉（SQLite 3.35+ 支持 DROP COLUMN；不支持时退化为跳过该断言）
+let droppedOk = true;
+try {
+  v2db.exec(`ALTER TABLE ${T.T_PLAN} DROP COLUMN effective_from`);
+  v2db.exec(`ALTER TABLE ${T.T_PLAN} DROP COLUMN effective_to`);
+} catch (err) {
+  droppedOk = false;
+}
+if (droppedOk) {
+  ok(!columnNames(v2db, T.T_PLAN).includes('effective_from'), 'v2 库确认没有 effective_from');
+  const v2InsPlan = v2db.prepare(INS_PLAN);
+  v2db.exec(`INSERT INTO ${T.T_MED} (name, dosage, note, is_active, created_at, updated_at)
+             VALUES ('A', '1片', NULL, 1, ${NOW}, ${NOW})`);
+  v2InsPlan.run(1, '["07:30"]', '2026-01-01', null, 1, NOW, NOW);
+
+  // 逐条执行 ALTER：列已存在就跳过（与 BpDatabase.hasColumn 的幂等逻辑一致）
+  for (const sql of MIG_ALTERS) {
+    const m = /ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)/i.exec(sql);
+    if (m !== null && columnNames(v2db, m[1]).includes(m[2])) {
+      continue;
+    }
+    v2db.exec(sql);
+  }
+  const cols = columnNames(v2db, T.T_PLAN);
+  ok(cols.includes('effective_from'), 'ALTER 后 med_plan 有 effective_from');
+  ok(cols.includes('effective_to'), 'ALTER 后 med_plan 有 effective_to');
+  const row = v2db.prepare(`SELECT effective_from, effective_to FROM ${T.T_PLAN} WHERE id = 1`).get();
+  eq(row.effective_from, 0, '旧行的 effective_from 默认 0（表示未回填，调用方按既有列推导）');
+  eq(row.effective_to, null, '旧行的 effective_to 默认 NULL（长期 / 未回填）');
+  // 幂等：再跑一遍 ALTER 不应抛错
+  let secondPassOk = true;
+  try {
+    for (const sql of MIG_ALTERS) {
+      const m = /ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)/i.exec(sql);
+      if (m !== null && columnNames(v2db, m[1]).includes(m[2])) {
+        continue;
+      }
+      v2db.exec(sql);
+    }
+  } catch (err) {
+    secondPassOk = false;
+  }
+  ok(secondPassOk, '重复执行迁移的 ALTER 幂等（列存在即跳过）');
+  // 回填规则由 TS 执行（backfillPlanWindows）：静态确认它确实写了这两列
+  ok(/backfillPlanWindows/.test(dbSrc) && /effective_from = \?/.test(dbSrc),
+    'migrate() 会调用 backfillPlanWindows 回填历史有效区间');
+} else {
+  console.log('· 当前 SQLite 不支持 DROP COLUMN，跳过 v2 → v3 的列级断言（不代表通过）');
+}
+v2db.close();
+
+console.log('================ 结论 ================');
   console.log('存在失败项，需修正。');
   process.exit(1);
 }

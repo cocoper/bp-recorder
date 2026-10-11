@@ -38,6 +38,12 @@ export class MedLifecycleService {
 
   /** 计划版本的有效下界（含） */
   static effectiveFrom(plan: MedPlan): number {
+    // 审查 R01.3：优先用持久化的有效区间（schema v3 起写入/回填）；
+    // 0 表示旧数据尚未回填，退回既有列推导，口径保持一致。
+    const persisted: number = plan.effectiveFrom === undefined ? 0 : plan.effectiveFrom;
+    if (persisted > 0) {
+      return persisted;
+    }
     const startTs: number | null = DateUtils.parseDate(plan.startDate);
     const start: number = startTs === null ? plan.createdAt : startTs;
     const created: number = plan.createdAt > 0 ? plan.createdAt : start;
@@ -46,10 +52,15 @@ export class MedLifecycleService {
 
   /** 计划版本的有效上界（含）：生效计划 = 预生成窗口末；已停用 = 停用时戳（未知则退回创建时刻） */
   static effectiveTo(plan: MedPlan, now: number): number {
-    if (plan.isActive) {
-      return DateUtils.endOfDay(DateUtils.addDays(now, MedLimits.PRE_GEN_DAYS));
+    const horizon: number = plan.isActive
+      ? DateUtils.endOfDay(DateUtils.addDays(now, MedLimits.PRE_GEN_DAYS))
+      : (plan.updatedAt > 0 ? plan.updatedAt : plan.createdAt);
+    // 审查 R01.3：持久化的区间终点（结束日 23:59 或停用时刻）更早时以它为准
+    const persisted: number | null = plan.effectiveTo === undefined ? null : plan.effectiveTo;
+    if (persisted !== null && persisted > 0 && persisted < horizon) {
+      return persisted;
     }
-    return plan.updatedAt > 0 ? plan.updatedAt : plan.createdAt;
+    return horizon;
   }
 
   /**
