@@ -19,7 +19,7 @@ import {
 } from './src/service/GenericImportService';
 import { BpRecord } from './src/model/BpRecord';
 import { Medication, MedLog, MedPlan, PlanExportRow } from './src/model/Med';
-import { BpDatabase } from './src/service/BpDatabase';
+import { BpDatabase, TxSession } from './src/service/BpDatabase';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 
@@ -1270,6 +1270,61 @@ async function reviewScenarios(): Promise<void> {
     eq(opens, 2, 'R18-a 一次初始化失败后再次 init 必须重新尝试打开数据库');
     ok(firstThrew && secondThrew, 'R18-a 两次失败都必须抛给调用方（不得静默成功）');
     arkStore['getRdbStore'] = original;
+  }
+
+  group('审查反例 R06（写操作串行队列与事务隔离）');
+  {
+    const db: BpDatabase = new BpDatabase();
+    const rows: string[] = [];
+    let begins = 0;
+    db.attachStoreStub({
+      beginTransaction: async () => {
+        begins++;
+      },
+      commit: async () => {},
+      rollBack: async () => {
+        rows.length = 0;
+      }
+    });
+    let release: () => void = () => {};
+    let entered: () => void = () => {};
+    const hold = new Promise<void>((r: () => void) => {
+      release = r;
+    });
+    const started = new Promise<void>((r: () => void) => {
+      entered = r;
+    });
+    const a = db.runInTransaction(async (tx: TxSession) => {
+      entered();
+      await hold;
+      throw new Error('A fails');
+    }).catch(() => {});
+    const b = db.runInTransaction(async (tx: TxSession) => {
+      rows.push('B');
+    }).catch(() => {});
+    await started;
+    release();
+    await a;
+    await b;
+    eq(rows.length, 1, 'R06-a B 的写入必须保留');
+    eq(rows[0], 'B', 'R06-a B 的写入不得被 A 的回滚带走');
+    eq(begins, 2, 'R06-a B 必须开自己的事务（不得并入 A 的事务）');
+
+    const db2: BpDatabase = new BpDatabase();
+    let calls = 0;
+    db2.attachStoreStub({
+      beginTransaction: async () => {
+        calls++;
+        if (calls === 1) {
+          throw new Error('begin fails');
+        }
+      },
+      commit: async () => {},
+      rollBack: async () => {}
+    });
+    await db2.runInTransaction(async (tx: TxSession) => {}).catch(() => {});
+    await db2.runInTransaction(async (tx: TxSession) => {});
+    eq(calls, 2, 'R06-b begin 失败后下一独立事务仍必须调用 begin（队列未被堵死）');
   }
 }
 

@@ -24,7 +24,9 @@ const STEPS = [
 ];
 
 if (!skipReview) {
-  STEPS.push(['review-regression（审查 19 反例，红=缺陷待修）', 'docs/review-2026-10-11/repro.cjs']);
+  // 用随仓库走的正式回归副本（源：审查包里的 repro.cjs，冻结件仍在 docs/review-2026-10-11/）：
+  // 其中 R06-a 按时序改写，业务断言含义保留并加强，见该文件头部说明。
+  STEPS.push(['review-regression（审查 19 反例，红=缺陷待修）', 'tools/regression/review-2026-10-11.cjs']);
 }
 
 const results = [];

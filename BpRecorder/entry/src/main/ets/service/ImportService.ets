@@ -7,7 +7,7 @@ import { DateUtils } from '../common/DateUtils';
 import { MedLimits } from '../common/Constants';
 import { Logger } from '../common/Logger';
 import { BpValidator } from './BpValidator';
-import { BpDatabase } from './BpDatabase';
+import { BpDatabase, TxSession } from './BpDatabase';
 import { MedService } from './MedService';
 
 const TAG: string = 'ImportService';
@@ -601,7 +601,7 @@ export class ImportService {
     let inserted: number = 0;
     const now: number = DateUtils.now();
     if (preview.drafts.length > 0) {
-      await db.runInTransaction(async () => {
+      await db.runInTransaction(async (tx: TxSession) => {
         const meds: Medication[] = await db.queryMedications();
         const nameToId: Map<string, number> = new Map<string, number>();
         for (let i = 0; i < meds.length; i++) {
@@ -612,21 +612,21 @@ export class ImportService {
           let medId: number | undefined = nameToId.get(d.medName);
           if (medId === undefined) {
             const draft: MedicationDraft = { name: d.medName, dosage: d.dosage, note: d.note };
-            medId = await db.insertMedication(draft, true);
+            medId = await db.insertMedication(draft, true, tx);
             nameToId.set(d.medName, medId);
             created.push(d.medName);
           } else {
             // 已有档案：确保启用，并按导入内容同步剂量
-            await db.setMedicationActive(medId, true);
+            await db.setMedicationActive(medId, true, tx);
           }
           // 计划整体替换：先清掉按旧计划生成的未来待服记录（P1-3），再写入新计划
-          await db.deleteFuturePendingLogs(medId, now);
+          await db.deleteFuturePendingLogs(medId, now, tx);
           await db.upsertPlan({
             medicationId: medId,
             timeSlots: d.timeSlots,
             startDate: d.startDate,
             endDate: d.endDate
-          });
+          }, tx);
           inserted++;
         }
       });
@@ -649,8 +649,8 @@ export class ImportService {
   static async commitBp(db: BpDatabase, preview: BpImportPreview): Promise<ImportResult> {
     let inserted: number = 0;
     if (preview.drafts.length > 0) {
-      await db.runInTransaction(async () => {
-        const affected: number = await db.batchInsertBp(preview.drafts);
+      await db.runInTransaction(async (tx: TxSession) => {
+        const affected: number = await db.batchInsertBp(preview.drafts, tx);
         if (affected < 0) {
           throw new Error('BP_IMPORT_BATCH_FAILED');
         }
@@ -675,7 +675,7 @@ export class ImportService {
     const created: string[] = [];
     let inserted: number = 0;
     if (preview.drafts.length > 0) {
-      await db.runInTransaction(async () => {
+      await db.runInTransaction(async (tx: TxSession) => {
         const meds = await db.queryMedications();
         const nameToId: Map<string, number> = new Map<string, number>();
         for (let i = 0; i < meds.length; i++) {
@@ -687,12 +687,12 @@ export class ImportService {
           let medId: number | undefined = nameToId.get(d.medName);
           if (medId === undefined) {
             const draft: MedicationDraft = { name: d.medName, dosage: d.dosage, note: null };
-            medId = await db.insertMedication(draft, false);
+            medId = await db.insertMedication(draft, false, tx);
             nameToId.set(d.medName, medId);
             created.push(d.medName);
           }
           await db.insertMedLogForImport(medId, d.medName, d.dosage, d.scheduledTime,
-            d.status, d.takenTime, d.note);
+            d.status, d.takenTime, d.note, tx);
           inserted++;
         }
       });

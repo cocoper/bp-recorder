@@ -85,6 +85,15 @@ const DDL: string[] = [
  * - 所有写操作失败均向上抛出，由页面统一提示（NFR-6：写入失败必须有兜底提示）。
  * - 事务封装支持嵌套调用（内层复用外层事务），防止 SQLite 不支持嵌套事务导致报错。
  */
+/**
+ * 事务会话（审查 R06.2）：显式携带本次事务使用的连接。
+ * 领域命令内部要复用同一事务时，**必须**把会话作为参数往下传，
+ * 不允许用全局布尔/环境变量去猜「调用者是否属于当前事务」。
+ */
+export interface TxSession {
+  readonly store: relationalStore.RdbStore;
+}
+
 export class BpDatabase {
   /** 测试库名必须以此开头（审查 R17：指定库名不等于隔离，测试构造器只接受严格测试前缀） */
   static readonly TEST_DB_PREFIX: string = 'bp_recorder_unittest';
@@ -92,7 +101,8 @@ export class BpDatabase {
   private static instance: BpDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;
   private initPromise: Promise<void> | null = null;
-  private inTransaction: boolean = false;
+  /** 写操作串行队列（审查 R06.1）：单步写与事务写共用同一条队列，杜绝独立写被卷进别人的事务 */
+  private txQueue: Promise<void> = Promise.resolve();
   /** 实际已连接的库名（'' = 未连接）。任何「换库名」请求都以此为准做拒绝判断。 */
   private openedStoreName: string = '';
   /** 是否由 createIsolated 创建的测试实例（生产单例为 false）。 */
@@ -158,7 +168,6 @@ export class BpDatabase {
     this.store = null;
     this.initPromise = null;
     this.openedStoreName = '';
-    this.inTransaction = false;
     if (current !== null) {
       await current.close();
     }
@@ -318,38 +327,75 @@ export class BpDatabase {
    * 事务执行器。任何异常都会回滚并向上抛出（FR-6.8：不产生半批数据）。
    * 嵌套调用时直接复用外层事务，避免 SQLite 报「cannot start a transaction within a transaction」。
    */
-  async runInTransaction(work: () => Promise<void>): Promise<void> {
-    const store: relationalStore.RdbStore = this.requireStore();
-    if (this.inTransaction) {
-      await work();
-      return;
-    }
-    this.inTransaction = true;
-    await store.beginTransaction();
+  /**
+   * 串行队列（审查 R06.1/R06.3）：所有写操作（含事务）排队执行，先来先服务。
+   * 无论成功、失败还是 begin 失败，finally 都会释放队列，避免一次故障把后续写入永久堵死。
+   */
+  private async runExclusive<T>(work: () => Promise<T>): Promise<T> {
+    const previous: Promise<void> = this.txQueue;
+    let release: () => void = () => {};
+    this.txQueue = new Promise<void>((resolve: () => void) => {
+      release = resolve;
+    });
+    await previous;
     try {
-      await work();
-      await store.commit();
-    } catch (err) {
-      const e = err as BusinessError;
-      Logger.error(TAG, `transaction failed, rolling back: code=${e.code}, message=${e.message}`);
-      try {
-        await store.rollBack();
-      } catch (rollbackErr) {
-        const re = rollbackErr as BusinessError;
-        Logger.error(TAG, `rollback failed: code=${re.code}, message=${re.message}`);
-      }
-      // 同上：转成 Error 子类后再抛出
-      throw new AppError(e.code, e.message);
+      return await work();
     } finally {
-      this.inTransaction = false;
+      release();
     }
+  }
+
+  /**
+   * 叶子写操作的统一入口（审查 R06.1）：
+   * - 传了会话 → 直接复用该事务的连接（嵌套领域命令，不再 begin/commit）；
+   * - 没传会话 → 排队独占执行，绝不会被卷进别人正在开的事务里。
+   */
+  private async write<T>(tx: TxSession | undefined, op: (store: relationalStore.RdbStore) => Promise<T>): Promise<T> {
+    if (tx !== undefined) {
+      return op(tx.store);
+    }
+    return this.runExclusive<T>(() => op(this.requireStore()));
+  }
+
+  /**
+   * 显式事务（审查 R06）：排队 → begin → work(tx) → commit，异常时回滚。
+   * 嵌套调用**不**猜上下文：调用方要么把 tx 往下传（走领域命令），要么就是一次独立事务（排队）。
+   */
+  async runInTransaction(work: (tx: TxSession) => Promise<void>): Promise<void> {
+    await this.runExclusive(async () => {
+      const store: relationalStore.RdbStore = this.requireStore();
+      try {
+        await store.beginTransaction();
+      } catch (err) {
+        const be = err as BusinessError;
+        Logger.error(TAG, `beginTransaction failed: code=${be.code}, message=${be.message}`);
+        // begin 失败：队列由 runExclusive 的 finally 释放，这里只负责把错误抛给调用方
+        throw new AppError(be.code, be.message);
+      }
+      const tx: TxSession = { store };
+      try {
+        await work(tx);
+        await store.commit();
+      } catch (err) {
+        const be = err as BusinessError;
+        Logger.error(TAG, `transaction failed, rolling back: code=${be.code}, message=${be.message}`);
+        try {
+          await store.rollBack();
+        } catch (rollbackErr) {
+          const re = rollbackErr as BusinessError;
+          // 回滚失败要如实记录，但**保留原始故障**抛给调用方（不能让调用方以为事务成功了）
+          Logger.error(TAG, `rollback failed: code=${re.code}, message=${re.message}`);
+        }
+        throw new AppError(be.code, be.message);
+      }
+    });
   }
 
   // ───────────────────────── bp_record ─────────────────────────
 
   /** 新增血压记录，返回新行 id */
-  async insertBp(draft: BpRecordDraft): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async insertBp(draft: BpRecordDraft, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
       'systolic': draft.systolic,
@@ -370,14 +416,15 @@ export class BpDatabase {
       Logger.error(TAG, `insertBp failed: code=${e.code}, message=${e.message}`);
       throw new AppError(e.code, e.message);
     }
+    });
   }
 
   /** 批量新增（导入用），返回成功条数 */
-  async batchInsertBp(drafts: BpRecordDraft[]): Promise<number> {
+  async batchInsertBp(drafts: BpRecordDraft[], tx?: TxSession): Promise<number> {
     if (drafts.length === 0) {
       return 0;
     }
-    const store: relationalStore.RdbStore = this.requireStore();
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const buckets: relationalStore.ValuesBucket[] = [];
     for (let i = 0; i < drafts.length; i++) {
@@ -402,11 +449,12 @@ export class BpDatabase {
       Logger.error(TAG, `batchInsertBp failed: code=${e.code}, message=${e.message}`);
       throw new AppError(e.code, e.message);
     }
+    });
   }
 
   /** 更新血压记录（按 id） */
-  async updateBp(record: BpRecord): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async updateBp(record: BpRecord, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'systolic': record.systolic,
       'diastolic': record.diastolic,
@@ -419,14 +467,16 @@ export class BpDatabase {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_BP);
     predicates.equalTo('id', record.id);
     return store.update(values, predicates);
+    });
   }
 
   /** 删除血压记录（不可逆，UI 层负责二次确认，CL-1） */
-  async deleteBp(id: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async deleteBp(id: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_BP);
     predicates.equalTo('id', id);
     return store.delete(predicates);
+    });
   }
 
   /** 分页查询（measure_time 倒序，FR-2.1 / FR-2.3） */
@@ -565,8 +615,8 @@ export class BpDatabase {
    * 新增药品档案。
    * @param active CSV 导入自动创建的档案需传 false（FR-6.7：仅建档案、状态停用、不建计划）
    */
-  async insertMedication(draft: MedicationDraft, active: boolean = true): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async insertMedication(draft: MedicationDraft, active: boolean = true, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
       'name': draft.name,
@@ -577,10 +627,11 @@ export class BpDatabase {
       'updated_at': now
     };
     return store.insert(DbConst.T_MED, values);
+    });
   }
 
-  async updateMedication(med: Medication): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async updateMedication(med: Medication, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'name': med.name,
       'dosage': med.dosage,
@@ -590,11 +641,12 @@ export class BpDatabase {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_MED);
     predicates.equalTo('id', med.id);
     return store.update(values, predicates);
+    });
   }
 
   /** 启停药品档案（停用为归档，历史打卡保留，FR-8.1） */
-  async setMedicationActive(id: number, active: boolean): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async setMedicationActive(id: number, active: boolean, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'is_active': active ? 1 : 0,
       'updated_at': DateUtils.now()
@@ -602,6 +654,7 @@ export class BpDatabase {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_MED);
     predicates.equalTo('id', id);
     return store.update(values, predicates);
+    });
   }
 
   async queryMedications(): Promise<Medication[]> {
@@ -656,17 +709,25 @@ export class BpDatabase {
    * 保存计划：每个药品只保留一条生效计划（FR-8.2）。
    * 旧计划置为停用而非删除，历史追溯不受影响（FR-8.3）。
    */
-  async upsertPlan(draft: MedPlanDraft): Promise<number> {
+  async upsertPlan(draft: MedPlanDraft, tx?: TxSession): Promise<number> {
+    if (tx !== undefined) {
+      return this.upsertPlanIn(tx, draft);
+    }
     let newId: number = 0;
-    await this.runInTransaction(async () => {
-      await this.deactivatePlansOf(draft.medicationId);
-      newId = await this.insertPlan(draft);
+    await this.runInTransaction(async (session: TxSession) => {
+      newId = await this.upsertPlanIn(session, draft);
     });
     return newId;
   }
 
-  private async insertPlan(draft: MedPlanDraft): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  /** 事务内的计划写入（明确的非开事务私有方法，审查 R06.2） */
+  private async upsertPlanIn(tx: TxSession, draft: MedPlanDraft): Promise<number> {
+    await this.deactivatePlansOf(draft.medicationId, tx);
+    return this.insertPlan(draft, tx);
+  }
+
+  private async insertPlan(draft: MedPlanDraft, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
       'medication_id': draft.medicationId,
@@ -678,10 +739,11 @@ export class BpDatabase {
       'updated_at': now
     };
     return store.insert(DbConst.T_PLAN, values);
+    });
   }
 
-  private async deactivatePlansOf(medicationId: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  private async deactivatePlansOf(medicationId: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'is_active': 0,
       'updated_at': DateUtils.now()
@@ -690,11 +752,12 @@ export class BpDatabase {
     predicates.equalTo('medication_id', medicationId);
     predicates.equalTo('is_active', 1);
     return store.update(values, predicates);
+    });
   }
 
   /** 按药品停用计划（FR-8.3：停用不影响历史打卡） */
-  async deactivatePlan(planId: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async deactivatePlan(planId: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'is_active': 0,
       'updated_at': DateUtils.now()
@@ -702,6 +765,7 @@ export class BpDatabase {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_PLAN);
     predicates.equalTo('id', planId);
     return store.update(values, predicates);
+    });
   }
 
   async queryPlans(): Promise<MedPlan[]> {
@@ -777,11 +841,10 @@ export class BpDatabase {
    * 配合 uidx_medlog_med_time 唯一索引 + INSERT OR IGNORE 双保险，
    * 同一天重复打开 App 不会产生重复 pending。
    */
-  async insertMissingLogs(drafts: MedLogDraft[]): Promise<number> {
+  async insertMissingLogs(drafts: MedLogDraft[], tx?: TxSession): Promise<number> {
     if (drafts.length === 0) {
       return 0;
     }
-    const store: relationalStore.RdbStore = this.requireStore();
 
     let minTs: number = drafts[0].scheduledTime;
     let maxTs: number = drafts[0].scheduledTime;
@@ -813,7 +876,7 @@ export class BpDatabase {
     }
 
     const now: number = DateUtils.now();
-    await this.runInTransaction(async () => {
+    const insertAll = async (store: relationalStore.RdbStore): Promise<void> => {
       for (let i = 0; i < pending.length; i++) {
         const d: MedLogDraft = pending[i];
         await store.executeSql(
@@ -823,7 +886,14 @@ export class BpDatabase {
           [d.medicationId, d.medName, d.dosage, d.scheduledTime, MedLogStatus.PENDING, now, now]
         );
       }
-    });
+    };
+    if (tx !== undefined) {
+      await insertAll(tx.store);
+    } else {
+      await this.runInTransaction(async (session: TxSession) => {
+        await insertAll(session.store);
+      });
+    }
     return pending.length;
   }
 
@@ -832,8 +902,8 @@ export class BpDatabase {
   }
 
   /** 更新打卡状态（状态机结果落库） */
-  async updateMedLogStatus(id: number, status: MedLogStatus, takenTime: number | null, note: string | null): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async updateMedLogStatus(id: number, status: MedLogStatus, takenTime: number | null, note: string | null, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const values: relationalStore.ValuesBucket = {
       'status': `${status}`,
       'taken_time': takenTime,
@@ -843,11 +913,12 @@ export class BpDatabase {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_LOG);
     predicates.equalTo('id', id);
     return store.update(values, predicates);
+    });
   }
 
   /** 自动标记漏服：status='pending' 且 计划时间早于 now−2h（FR-9.4） */
-  async markMissed(now: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async markMissed(now: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const cutoff: number = now - MedLimits.MISS_GRACE_MS;
     const values: relationalStore.ValuesBucket = {
       'status': `${MedLogStatus.MISSED}`,
@@ -857,6 +928,7 @@ export class BpDatabase {
     predicates.equalTo('status', `${MedLogStatus.PENDING}`);
     predicates.lessThan('scheduled_time', cutoff);
     return store.update(values, predicates);
+    });
   }
 
   /**
@@ -872,22 +944,24 @@ export class BpDatabase {
    *
    * @returns 被删除的行数
    */
-  async deleteFuturePendingLogs(medicationId: number, now: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async deleteFuturePendingLogs(medicationId: number, now: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_LOG);
     predicates.equalTo('medication_id', medicationId);
     predicates.equalTo('status', `${MedLogStatus.PENDING}`);
     predicates.greaterThan('scheduled_time', now);
     return store.delete(predicates);
+    });
   }
 
   /** 删除全部药品的未来待服记录（清空数据 / 全部停用时使用） */
-  async deleteAllFuturePendingLogs(now: number): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+  async deleteAllFuturePendingLogs(now: number, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_LOG);
     predicates.equalTo('status', `${MedLogStatus.PENDING}`);
     predicates.greaterThan('scheduled_time', now);
     return store.delete(predicates);
+    });
   }
 
   /** 区间查询打卡记录，scheduled_time 升序 */
@@ -928,8 +1002,8 @@ export class BpDatabase {
 
   /** 导入用：按原始状态与打卡时间写入（不入库为 pending） */
   async insertMedLogForImport(medicationId: number, medName: string, dosage: string,
-    scheduledTime: number, status: MedLogStatus, takenTime: number | null, note: string | null): Promise<number> {
-    const store: relationalStore.RdbStore = this.requireStore();
+    scheduledTime: number, status: MedLogStatus, takenTime: number | null, note: string | null, tx?: TxSession): Promise<number> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
       'medication_id': medicationId,
@@ -943,6 +1017,7 @@ export class BpDatabase {
       'updated_at': now
     };
     return store.insert(DbConst.T_LOG, values);
+    });
   }
 
   private static async readLogs(store: relationalStore.RdbStore, predicates: relationalStore.RdbPredicates): Promise<MedLog[]> {
@@ -1043,9 +1118,9 @@ export class BpDatabase {
    * 清空全部业务数据（FR-7.2）。
    * 单事务执行四表删除；Preferences 中的设置项（分级标准、免责声明已读）保留。
    */
-  async clearAll(): Promise<void> {
-    const store: relationalStore.RdbStore = this.requireStore();
-    await this.runInTransaction(async () => {
+  async clearAll(tx?: TxSession): Promise<void> {
+    const store: relationalStore.RdbStore = tx !== undefined ? tx.store : this.requireStore();
+    const wipe = async (): Promise<void> => {
       await store.executeSql(`DELETE FROM ${DbConst.T_LOG}`);
       await store.executeSql(`DELETE FROM ${DbConst.T_PLAN}`);
       await store.executeSql(`DELETE FROM ${DbConst.T_MED}`);
@@ -1059,7 +1134,14 @@ export class BpDatabase {
         const e = err as BusinessError;
         Logger.warn(TAG, `reset sqlite_sequence skipped: code=${e.code}, message=${e.message}`);
       }
-    });
+    };
+    if (tx !== undefined) {
+      await wipe();
+    } else {
+      await this.runInTransaction(async (session: TxSession) => {
+        await wipe();
+      });
+    }
     Logger.info(TAG, 'all data cleared');
   }
 }
