@@ -1441,6 +1441,14 @@
       "value": "用药小结"
     },
     {
+      "name": "report_generated_at",
+      "value": "生成于 %s"
+    },
+    {
+      "name": "report_scope_note",
+      "value": "口径：按测量时间归入周期；依从率按应服义务计（漏服/跳过/补记按打卡状态）"
+    },
+    {
       "name": "report_not_ready",
       "value": "报告还没准备好，请稍候再试"
     },

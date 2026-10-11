@@ -558,6 +558,18 @@ struct ReportPage {
           .fontColor($r('app.color.print_watermark'))
           .width('100%')
 
+        // 审查 R11：报告内注明**生成时刻**与**统计口径**（过去只印数字，口径无从核对）
+        Text($r('app.string.report_generated_at',
+          `${DateUtils.formatDate(this.report.generatedAt)} ${DateUtils.formatTime(this.report.generatedAt)}`))
+          .fontSize(10)
+          .fontColor($r('app.color.print_watermark'))
+          .width('100%')
+        Text($r('app.string.report_scope_note'))
+          .fontSize(10)
+          .lineHeight(15)
+          .fontColor($r('app.color.print_watermark'))
+          .width('100%')
+
         // 水印行（FR-11.2）
         Text(this.report.watermark)
           .fontSize(10)

@@ -1583,6 +1583,7 @@ async function reviewScenarios(): Promise<void> {
     if (r11 !== null) {
       eq(r11.hasMedicationData, true, 'R11-a 周期内有历史打卡 → 显示用药小结（与当前计划是否生效无关）');
       eq(r11.hasMedPlan, true, 'R11 兼容别名与 hasMedicationData 一致');
+      eq(r11.generatedAt, ts(2026, 10, 11, 12, 0), 'R11 报告携带生成时刻（口径可核对，不是"看起来是此刻"）');
       eq(r11.medPendingNotDue, 0, 'R11 已服记录不计入「尚未到点」');
     }
     const r11b = ReportService.build('week', ReportService.weekRange(ts(2026, 10, 18, 12, 0)),

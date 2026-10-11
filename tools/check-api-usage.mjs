@@ -246,6 +246,8 @@ for (const file of files) {
   }
 }
 
+console.log('检查范围：仅扫描 entry/src 下的 ArkTS 源码中「已登记的关键 API 调用形态与实参个数」；',
+  '不覆盖运行时行为，也不覆盖系统 API 的语义正确性。');
 console.log('================ API 使用一致性扫描 ================');
 console.log(`扫描文件：${files.length} 个（main + ohosTest）`);
 console.log('');

@@ -119,6 +119,8 @@ function report(title, missing, unused) {
 const miss = (ref, def) => [...ref].filter((k) => !def.has(k));
 const dead = (ref, def) => [...def].filter((k) => !ref.has(k));
 
+console.log('检查范围：string/color/media 资源的定义-引用一致性、base 与 dark 的键对应、',
+  'print_* / chart_* 配色族约束；不覆盖资源在真机上的最终渲染效果。');
 console.log('================ 资源键一致性校验 ================');
 console.log(`代码文件 ${codeFiles.length} 个，引用 string ${referenced.string.size} 个 / color ${referenced.color.size} 个 / media ${referenced.media.size} 个`);
 console.log(`定义 string ${definedString.size} 个 / color(base) ${definedColorBase.size} 个 / color(dark) ${definedColorDark.size} 个 / media ${mediaFiles.size} 个`);
