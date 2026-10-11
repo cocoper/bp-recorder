@@ -1904,6 +1904,76 @@ async function reviewScenarios(): Promise<void> {
       'R15 未超量时只删过期的');
   }
 
+  group('导入导出逐字段等价（三种格式）');
+  {
+    // 血压：含空心率、空备注、同分钟不同毫秒
+    const b1: BpRecord = rec(ts(2026, 10, 11, 7, 5) + 123, 118, 76, null, 1);
+    const b2: BpRecord = rec(ts(2026, 10, 11, 7, 5) + 900, 132, 88, 77, 2);
+    b2.note = '起床后';
+    b2.period = Period.NIGHT;
+    // 注意：不要用「今天晚些时候」的时间 —— 导入有 now+60s 上界（审查 R13），未来行会被正确拒绝
+    const b3: BpRecord = rec(ts(2026, 10, 11, 12, 30), 145, 95, 99, 3);
+    b3.period = Period.AFTERNOON;
+    const srcBp: BpRecord[] = [b1, b2, b3];
+    const bpPv = ImportService.parseBpTable(
+      Csv.parse(ExportService.buildBpCsv(srcBp, VOCAB)), VOCAB, new Set<string>());
+    eq(bpPv.drafts.length, 3, '往返：血压 3 条全部还原');
+    eq(bpPv.drafts[0].measureTime, srcBp[0].measureTime, '往返：血压毫秒时间逐字段一致');
+    eq(bpPv.drafts[0].heartRate, null, '往返：空心率保持 null（不被补 0）');
+    eq(bpPv.drafts[1].note, '起床后', '往返：备注逐字段一致');
+    eq(`${bpPv.drafts[1].period}`, `${srcBp[1].period}`, '往返：时段逐字段一致');
+    eq(bpPv.drafts[1].systolic, 132, '往返：收缩压逐字段一致');
+    ok(bpPv.drafts[0].measureTime !== bpPv.drafts[1].measureTime,
+      '往返：同一分钟不同毫秒仍是两条不同记录');
+
+    // 用药打卡：已服 / 跨日补记 / 漏服 / 待服 + 备注
+    const srcLogs: MedLog[] = [
+      mlog(ts(2026, 10, 11, 7, 15), MedLogStatus.TAKEN, ts(2026, 10, 11, 7, 20), 1),
+      { id: 2, medicationId: 1, medName: '测试药1', dosage: '2片', scheduledTime: ts(2026, 10, 11, 19, 30),
+        takenTime: ts(2026, 10, 13, 9, 15) + 3025, status: MedLogStatus.TAKEN, note: '隔日补记',
+        createdAt: 0, updatedAt: 0 },
+      { id: 3, medicationId: 1, medName: '测试药1', dosage: '1片', scheduledTime: ts(2026, 10, 12, 7, 15),
+        takenTime: null, status: MedLogStatus.MISSED, note: null, createdAt: 0, updatedAt: 0 }
+    ];
+    const medPv = ImportService.parseMedTable(
+      Csv.parse(ExportService.buildMedCsv(srcLogs, VOCAB)), VOCAB, new Set<string>(),
+      new Map<string, number>(), undefined, new Set<string>());
+    eq(medPv.drafts.length, 3, '往返：打卡 3 条全部还原');
+    eq(medPv.drafts[0].takenTime, ts(2026, 10, 11, 7, 20), '往返：当日打卡时间一致');
+    eq(medPv.drafts[1].takenTime, ts(2026, 10, 13, 9, 15) + 3025, '往返：跨两日补记时间与毫秒一致');
+    eq(medPv.drafts[1].note, '隔日补记', '往返：打卡备注一致');
+    eq(medPv.drafts[1].dosage, '2片', '往返：剂量一致（历史剂量不随档案变）');
+    eq(`${medPv.drafts[2].status}`, `${MedLogStatus.MISSED}`, '往返：漏服状态一致');
+    eq(medPv.drafts[2].takenTime, null, '往返：漏服不造出打卡时间');
+
+    // 计划：CSV 只承载**生效**计划（这是交换格式的已知边界，不是缺陷掩盖）
+    const planMeds: Medication[] = [med(1, '测试药1'), med(2, '测试药2', false)];
+    const srcPlans: MedPlan[] = [
+      plan(7, 1, ['07:15', '19:30'], '2026-10-01', null, true),
+      plan(8, 1, ['12:00'], '2026-09-01', '2026-09-30', false)
+    ];
+    const rows: PlanExportRow[] = [];
+    const byId: Map<number, Medication> = new Map<number, Medication>();
+    for (const m of planMeds) {
+      byId.set(m.id, m);
+    }
+    for (const pl of srcPlans) {
+      const m = byId.get(pl.medicationId);
+      if (pl.isActive && m !== undefined) {
+        rows.push({ medName: m.name, dosage: m.dosage, timeSlots: pl.timeSlots, startDate: pl.startDate,
+          endDate: pl.endDate, note: m.note });
+      }
+    }
+    const planPv = ImportService.parsePlanTable(
+      Csv.parse(ExportService.buildPlanCsv(rows, VOCAB)), VOCAB, new Set<string>());
+    eq(planPv.drafts.length, 1, '往返：计划 CSV 只含生效计划（停用计划需用完整备份恢复）');
+    eq(planPv.drafts[0].medName, '测试药1', '往返：计划药品名一致');
+    eq(planPv.drafts[0].timeSlots.length, 2, '往返：每日时点数量一致');
+    eq(planPv.drafts[0].timeSlots[1], '19:30', '往返：时点内容一致');
+    eq(planPv.drafts[0].startDate, '2026-10-01', '往返：开始日期一致');
+    eq(planPv.drafts[0].endDate, null, '往返：长期计划 endDate 保持 null');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;
