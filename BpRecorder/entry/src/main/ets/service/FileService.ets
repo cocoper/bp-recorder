@@ -34,6 +34,20 @@ export class FileService {
     return { uri: uri, name: FileService.baseName(uri) };
   }
 
+  /** 选择单个文档（审查 R10：完整备份为 .json） */
+  static async pickDocument(context: common.UIAbilityContext, suffix: string): Promise<PickedFile | null> {
+    const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
+    options.maxSelectNumber = 1;
+    options.fileSuffixFilters = [suffix];
+    const viewPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(context);
+    const uris: string[] = await viewPicker.select(options);
+    if (uris === null || uris === undefined || uris.length === 0) {
+      return null;
+    }
+    const uri: string = uris[0];
+    return { uri: uri, name: FileService.baseName(uri) };
+  }
+
   /** 让用户选择保存位置与文件名，返回目标 URI；取消返回 null */
   static async pickSaveTarget(context: common.UIAbilityContext, fileName: string): Promise<string | null> {
     const options: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();

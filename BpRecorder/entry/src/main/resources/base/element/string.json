@@ -1477,6 +1477,50 @@
       "value": "导出数据"
     },
     {
+      "name": "settings_backup_export",
+      "value": "导出完整备份"
+    },
+    {
+      "name": "settings_backup_import",
+      "value": "从备份恢复"
+    },
+    {
+      "name": "backup_sheet_title",
+      "value": "完整备份（推荐用于换机）"
+    },
+    {
+      "name": "backup_sheet_msg",
+      "value": "完整备份是唯一的无损恢复方式；三份 CSV 只是交换格式，不能保证完整还原。"
+    },
+    {
+      "name": "backup_restore_title",
+      "value": "确认恢复"
+    },
+    {
+      "name": "toast_backup_done",
+      "value": "备份已导出（%d 条记录）"
+    },
+    {
+      "name": "toast_restore_done",
+      "value": "恢复完成：新增 %d 覆盖 %d 忽略 %d"
+    },
+    {
+      "name": "error_backup_format",
+      "value": "这不是本应用的完整备份文件（或版本不支持），已拒绝导入"
+    },
+    {
+      "name": "backup_restore_counts",
+      "value": "将新增 %d 条、覆盖 %d 条、忽略备份内重复 %d 条；恢复过程中不会生成待服记录或发布提醒。"
+    },
+    {
+      "name": "action_restore",
+      "value": "开始恢复"
+    },
+    {
+      "name": "error_backup_restore",
+      "value": "恢复失败：未写入任何数据"
+    },
+    {
       "name": "settings_import",
       "value": "导入数据"
     },

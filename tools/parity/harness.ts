@@ -20,12 +20,11 @@ import {
 } from './src/service/GenericImportService';
 import { BpRecord } from './src/model/BpRecord';
 import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
-import { BpDatabase, TxSession } from './src/service/BpDatabase';
+import { BackupTarget, BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
 import { BackupService } from './src/service/BackupService';
 import { BackupBp, BackupFile, BackupLog, BackupMed, BackupPlan } from './src/model/Backup';
-import { BackupTarget } from './src/service/BackupService';
 import { ReminderVocab } from './src/common/Vocab';
 import { ReminderMode } from './src/model/Types';
 import { common } from '@kit.AbilityKit';

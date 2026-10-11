@@ -113,7 +113,20 @@ export interface SaveMedicationPlanResult {
   generatedPending: number;
 }
 
-export class BpDatabase {
+/**
+ * 恢复写入目标（审查 R10.4）：完整备份恢复只需要这四张表的写入与事务入口。
+ * 放在这里是为了让 BpDatabase 显式 implements（ArkTS 不支持结构化类型），
+ * 同时避免与 BackupService 形成循环依赖。
+ */
+export interface BackupTarget {
+  runInTransaction(work: (tx: TxSession) => Promise<void>): Promise<void>;
+  restoreMedication(m: BackupMed, tx?: TxSession): Promise<void>;
+  restorePlan(p: BackupPlan, tx?: TxSession): Promise<void>;
+  restoreMedLog(l: BackupLog, tx?: TxSession): Promise<void>;
+  restoreBp(b: BackupBp, tx?: TxSession): Promise<void>;
+}
+
+export class BpDatabase implements BackupTarget {
   /** 测试库名必须以此开头（审查 R17：指定库名不等于隔离，测试构造器只接受严格测试前缀） */
   static readonly TEST_DB_PREFIX: string = 'bp_recorder_unittest';
 

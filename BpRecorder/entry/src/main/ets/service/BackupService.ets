@@ -4,7 +4,7 @@ import {
 } from '../model/Backup';
 import { Medication, MedLog, MedPlan } from '../model/Med';
 import { BpRecord } from '../model/BpRecord';
-import { TxSession } from './BpDatabase';
+import { BackupTarget, TxSession } from './BpDatabase';
 import { DbConst, MedLimits } from '../common/Constants';
 import { BackupRestoreResult } from '../model/Backup';
 import { DateUtils } from '../common/DateUtils';
@@ -403,14 +403,3 @@ export class BackupService {
   }
 }
 
-/**
- * 恢复写入目标（审查 R10.4）：由 BpDatabase 实现，测试可注入内存实现。
- * 只暴露恢复需要的四表写入与事务入口 —— 恢复期间不得触发 pending 生成或提醒发布。
- */
-export interface BackupTarget {
-  runInTransaction(work: (tx: TxSession) => Promise<void>): Promise<void>;
-  restoreMedication(m: BackupMed, tx?: TxSession): Promise<void>;
-  restorePlan(p: BackupPlan, tx?: TxSession): Promise<void>;
-  restoreMedLog(l: BackupLog, tx?: TxSession): Promise<void>;
-  restoreBp(b: BackupBp, tx?: TxSession): Promise<void>;
-}
