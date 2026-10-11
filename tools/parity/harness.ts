@@ -24,7 +24,8 @@ import { BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
 import { BackupService } from './src/service/BackupService';
-import { BackupFile } from './src/model/Backup';
+import { BackupBp, BackupFile, BackupLog, BackupMed, BackupPlan } from './src/model/Backup';
+import { BackupTarget } from './src/service/BackupService';
 import { ReminderVocab } from './src/common/Vocab';
 import { ReminderMode } from './src/model/Types';
 import { common } from '@kit.AbilityKit';
@@ -1642,6 +1643,61 @@ async function reviewScenarios(): Promise<void> {
     eq(prev.overwriteCounts.meds, 1, 'R10 预览：已存在的药品计为「覆盖」');
     eq(prev.addCounts.plans, 1, 'R10 预览：新计划计为「新增」');
     eq(prev.restorable, true, 'R10 预览：无问题时允许恢复');
+
+    // 恢复落库（用内存目标验证：单事务、幂等、校验失败零写入、无提醒副作用）
+    const store = {
+      meds: new Map<number, BackupMed>(), plans: new Map<number, BackupPlan>(),
+      logs: new Map<string, BackupLog>(), bp: new Map<string, BackupBp>(),
+      txCount: 0, writes: 0, reminderCalls: 0
+    };
+    const target: BackupTarget = {
+      runInTransaction: async (work: (tx: TxSession) => Promise<void>): Promise<void> => {
+        store.txCount++;
+        await work({ store: null } as unknown as TxSession);
+      },
+      restoreMedication: async (m: BackupMed): Promise<void> => {
+        store.writes++;
+        store.meds.set(m.id, m);
+      },
+      restorePlan: async (p: BackupPlan): Promise<void> => {
+        store.writes++;
+        store.plans.set(p.id, p);
+      },
+      restoreMedLog: async (l: BackupLog): Promise<void> => {
+        store.writes++;
+        store.logs.set(`${l.medicationId}_${l.scheduledTime}`, l);
+      },
+      restoreBp: async (b: BackupBp): Promise<void> => {
+        store.writes++;
+        store.bp.set(`${b.measureTime}_${b.systolic}_${b.diastolic}`, b);
+      }
+    };
+    const noneN: Set<number> = new Set<number>();
+    const noneS: Set<string> = new Set<string>();
+    const r1 = await BackupService.restore(target, file, noneN, noneN, noneS, noneS);
+    eq(r1.added.meds, 1, 'R10 空库恢复：档案新增 1');
+    eq(r1.added.plans, 1, 'R10 空库恢复：计划新增 1');
+    eq(r1.added.logs, 1, 'R10 空库恢复：打卡新增 1');
+    eq(r1.added.bp, 1, 'R10 空库恢复：血压新增 1');
+    eq(store.txCount, 1, 'R10 恢复在单次事务内完成');
+    eq(store.reminderCalls, 0, 'R10 恢复过程中不发布任何提醒（调用方提交后统一协调）');
+
+    const r2 = await BackupService.restore(target, file, new Set<number>([1]), new Set<number>([7]),
+      new Set<string>([`1_${ts(2026, 10, 11, 8, 0)}`]),
+      new Set<string>([`${bpRec.measureTime}_120_80`]));
+    eq(r2.added.bp, 0, 'R10 重复恢复不重复新增血压');
+    eq(r2.overwritten.bp, 1, 'R10 重复恢复按身份覆盖（幂等）');
+    eq(store.bp.size, 1, 'R10 重复恢复后总量不变');
+    eq(store.logs.size, 1, 'R10 重复恢复后打卡总量不变');
+
+    const brokenFile = (BackupService.parse(text).file) as BackupFile;
+    brokenFile.logs[0].medicationId = 999;
+    brokenFile.logs[0].medName = '';
+    const writesBefore: number = store.writes;
+    const r3 = await BackupService.restore(target, brokenFile, noneN, noneN, noneS, noneS);
+    ok(r3.issues.length > 0, 'R10 校验不通过时返回问题清单');
+    eq(r3.added.meds + r3.added.plans + r3.added.logs + r3.added.bp, 0, 'R10 校验不通过时零新增');
+    eq(store.writes, writesBefore, 'R10 校验不通过时不写入任何数据（不产生半恢复）');
   }
 
   group('审查反例 R17（测试实例隔离）');

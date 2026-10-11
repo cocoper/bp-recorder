@@ -4,7 +4,9 @@ import {
 } from '../model/Backup';
 import { Medication, MedLog, MedPlan } from '../model/Med';
 import { BpRecord } from '../model/BpRecord';
+import { TxSession } from './BpDatabase';
 import { DbConst, MedLimits } from '../common/Constants';
+import { BackupRestoreResult } from '../model/Backup';
 import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 
@@ -110,6 +112,92 @@ export class BackupService {
       return { file: null, issues: issues };
     }
     return { file: raw, issues: issues };
+  }
+
+  /**
+   * 恢复（审查 R10.3/R10.4）：**单次事务**按稳定身份覆盖写入四表，先档案/计划再打卡/血压，
+   * 过程中不生成 pending、不发布提醒；提醒由调用方在提交后统一重新协调。
+   * 传回的计数是「本次实际新增 / 覆盖 / 忽略（备份内部重复）」，不是「插入成功」。
+   */
+  static async restore(target: BackupTarget, file: BackupFile,
+    existingMedIds: Set<number>, existingPlanIds: Set<number>,
+    existingLogKeys: Set<string>, existingBpKeys: Set<string>): Promise<BackupRestoreResult> {
+    const result: BackupRestoreResult = {
+      added: { bp: 0, meds: 0, plans: 0, logs: 0 },
+      overwritten: { bp: 0, meds: 0, plans: 0, logs: 0 },
+      ignored: 0,
+      issues: BackupService.validate(file)
+    };
+    if (result.issues.length > 0) {
+      return result;    // 校验不通过一律不写（避免半恢复）
+    }
+    const seenMed: Set<number> = new Set<number>();
+    const seenPlan: Set<number> = new Set<number>();
+    const seenLog: Set<string> = new Set<string>();
+    const seenBp: Set<string> = new Set<string>();
+
+    await target.runInTransaction(async (tx: TxSession): Promise<void> => {
+      for (let i = 0; i < file.meds.length; i++) {
+        const m: BackupMed = file.meds[i];
+        if (seenMed.has(m.id)) {
+          result.ignored++;
+          continue;
+        }
+        seenMed.add(m.id);
+        await target.restoreMedication(m, tx);
+        if (existingMedIds.has(m.id)) {
+          result.overwritten.meds++;
+        } else {
+          result.added.meds++;
+        }
+      }
+      for (let i = 0; i < file.plans.length; i++) {
+        const p: BackupPlan = file.plans[i];
+        if (seenPlan.has(p.id)) {
+          result.ignored++;
+          continue;
+        }
+        seenPlan.add(p.id);
+        await target.restorePlan(p, tx);
+        if (existingPlanIds.has(p.id)) {
+          result.overwritten.plans++;
+        } else {
+          result.added.plans++;
+        }
+      }
+      for (let i = 0; i < file.logs.length; i++) {
+        const l: BackupLog = file.logs[i];
+        const key: string = `${l.medicationId}_${l.scheduledTime}`;
+        if (seenLog.has(key)) {
+          result.ignored++;
+          continue;
+        }
+        seenLog.add(key);
+        await target.restoreMedLog(l, tx);
+        if (existingLogKeys.has(key)) {
+          result.overwritten.logs++;
+        } else {
+          result.added.logs++;
+        }
+      }
+      for (let i = 0; i < file.bp.length; i++) {
+        const b: BackupBp = file.bp[i];
+        const key: string = `${b.measureTime}_${b.systolic}_${b.diastolic}`;
+        if (seenBp.has(key)) {
+          result.ignored++;
+          continue;
+        }
+        seenBp.add(key);
+        await target.restoreBp(b, tx);
+        if (existingBpKeys.has(key)) {
+          result.overwritten.bp++;
+        } else {
+          result.added.bp++;
+        }
+      }
+    });
+    Logger.info(TAG, `backup restored: added=${JSON.stringify(result.added)}, overwritten=${JSON.stringify(result.overwritten)}`);
+    return result;
   }
 
   /** 有限正时间戳 */
@@ -313,4 +401,16 @@ export class BackupService {
       restorable: issues.length === 0
     };
   }
+}
+
+/**
+ * 恢复写入目标（审查 R10.4）：由 BpDatabase 实现，测试可注入内存实现。
+ * 只暴露恢复需要的四表写入与事务入口 —— 恢复期间不得触发 pending 生成或提醒发布。
+ */
+export interface BackupTarget {
+  runInTransaction(work: (tx: TxSession) => Promise<void>): Promise<void>;
+  restoreMedication(m: BackupMed, tx?: TxSession): Promise<void>;
+  restorePlan(p: BackupPlan, tx?: TxSession): Promise<void>;
+  restoreMedLog(l: BackupLog, tx?: TxSession): Promise<void>;
+  restoreBp(b: BackupBp, tx?: TxSession): Promise<void>;
 }

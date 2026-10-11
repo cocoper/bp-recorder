@@ -3,6 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { BpDedupeTuple, BpRecord, BpRecordDraft, PageResult } from '../model/BpRecord';
 import { MedDedupeTuple, Medication, MedicationDraft, MedLog, MedLogDraft, MedPlan, MedPlanDraft } from '../model/Med';
+import { BackupBp, BackupLog, BackupMed, BackupPlan } from '../model/Backup';
 import { MedLogStatus, parseMedLogStatus, parsePeriod } from '../model/Types';
 import { DbConst, MedLimits } from '../common/Constants';
 import { DateUtils } from '../common/DateUtils';
@@ -1110,6 +1111,75 @@ export class BpDatabase {
   }
 
   /** 用药打卡去重元组（药品 id / 名称 / 计划时间） */
+  // ───────────────────── 完整备份恢复（审查 R10.4）─────────────────────
+  // 说明：恢复按**稳定 id**覆盖写入，保留原 created_at/updated_at 与启停状态；
+  // 恢复过程中**不生成 pending、不发布提醒**，提醒由调用方在提交后统一重新协调（报告 R10.3）。
+
+  /** 按 id 覆盖写入药品档案 */
+  async restoreMedication(m: BackupMed, tx?: TxSession): Promise<void> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<void> => {
+      const fallback: number = DateUtils.now();
+      await store.executeSql(
+        `INSERT OR REPLACE INTO medication (id, name, dosage, note, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [m.id, m.name, m.dosage, m.note, m.isActive ? 1 : 0,
+          m.createdAt > 0 ? m.createdAt : fallback, m.updatedAt > 0 ? m.updatedAt : fallback]);
+    });
+  }
+
+  /** 按 id 覆盖写入用药计划（含起止日期与启停状态） */
+  async restorePlan(p: BackupPlan, tx?: TxSession): Promise<void> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<void> => {
+      const fallback: number = DateUtils.now();
+      await store.executeSql(
+        `INSERT OR REPLACE INTO med_plan
+           (id, medication_id, time_slots, start_date, end_date, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [p.id, p.medicationId, p.timeSlots.join(','), p.startDate, p.endDate, p.isActive ? 1 : 0,
+          p.createdAt > 0 ? p.createdAt : fallback, p.updatedAt > 0 ? p.updatedAt : fallback]);
+    });
+  }
+
+  /** 按 id 覆盖写入打卡记录（含毫秒时间与状态） */
+  async restoreMedLog(l: BackupLog, tx?: TxSession): Promise<void> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<void> => {
+      const fallback: number = DateUtils.now();
+      await store.executeSql(
+        `INSERT OR REPLACE INTO med_log
+           (id, medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [l.id, l.medicationId, l.medName, l.dosage, l.scheduledTime, l.takenTime, `${l.status}`, l.note,
+          l.createdAt > 0 ? l.createdAt : fallback, l.updatedAt > 0 ? l.updatedAt : fallback]);
+    });
+  }
+
+  /** 血压：身份为 (测量时间, 收缩压, 舒张压)，存在则覆盖可变成分，不存在则插入 */
+  async restoreBp(b: BackupBp, tx?: TxSession): Promise<void> {
+    return this.write(tx, async (store: relationalStore.RdbStore): Promise<void> => {
+      const now: number = DateUtils.now();
+      const rs: relationalStore.ResultSet = await store.querySql(
+        'SELECT id FROM bp_record WHERE measure_time = ? AND systolic = ? AND diastolic = ?',
+        [b.measureTime, b.systolic, b.diastolic]);
+      let exists: boolean = false;
+      try {
+        exists = rs.goToNextRow();
+      } finally {
+        rs.close();
+      }
+      if (exists) {
+        await store.executeSql(
+          `UPDATE bp_record SET heart_rate = ?, period = ?, note = ?, updated_at = ?
+           WHERE measure_time = ? AND systolic = ? AND diastolic = ?`,
+          [b.heartRate, b.period, b.note, now, b.measureTime, b.systolic, b.diastolic]);
+      } else {
+        await store.executeSql(
+          `INSERT INTO bp_record (systolic, diastolic, heart_rate, measure_time, period, note, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [b.systolic, b.diastolic, b.heartRate, b.measureTime, b.period, b.note, now, now]);
+      }
+    });
+  }
+
   async queryMedLogDedupeTuples(): Promise<MedDedupeTuple[]> {
     const store: relationalStore.RdbStore = this.requireStore();
     const rs: relationalStore.ResultSet = await store.querySql(

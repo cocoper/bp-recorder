@@ -111,3 +111,15 @@ export interface BackupPreview {
   /** 是否可执行恢复（issues 为空才允许） */
   restorable: boolean;
 }
+
+/** 恢复结果：明确「新增 / 覆盖 / 忽略」数量，不接受「插入成功」这种模糊结论 */
+export interface BackupRestoreResult {
+  /** 本次新增的条数（按表） */
+  added: BackupCounts;
+  /** 本次按稳定身份覆盖的条数（按表） */
+  overwritten: BackupCounts;
+  /** 备份内部重复而被忽略的条数 */
+  ignored: number;
+  /** 逐字段校验问题；非空表示**未写入任何数据** */
+  issues: BackupIssue[];
+}
