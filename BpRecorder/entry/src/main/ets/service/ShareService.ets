@@ -62,6 +62,59 @@ export class ShareService {
   }
 
   /**
+   * 切片计划（审查 R15.4，纯函数）：把一张过长的位图按单张上限切段，
+   * 每段带序号 —— 输出文件名与提示都按这个序号编号，保证「不缩图、不丢尾部」。
+   */
+  static planSlices(heightPx: number, maxHeightPx: number): CaptureSlice[] {
+    const limit: number = maxHeightPx > 0 ? maxHeightPx : ShareService.CAPTURE_MAX_HEIGHT_PX;
+    const total: number = heightPx > 0 ? Math.ceil(heightPx) : 0;
+    if (total <= limit) {
+      return [{ index: 1, y: 0, height: total }];
+    }
+    const count: number = Math.ceil(total / limit);
+    const out: CaptureSlice[] = [];
+    for (let i = 0; i < count; i++) {
+      const y: number = i * limit;
+      const h: number = Math.min(limit, total - y);
+      if (h > 0) {
+        out.push({ index: i + 1, y: y, height: h });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 把整张 PNG 按切片计划切成多张 PNG（审查 R15.4）。
+   * 实现：一次抓图 → 打包 PNG → 按 desiredRegion 逐段解码 → 重新打包；每张解码结果用后立即释放。
+   */
+  static async slicePng(png: ArrayBuffer, widthPx: number, slices: CaptureSlice[]): Promise<ArrayBuffer[]> {
+    const out: ArrayBuffer[] = [];
+    const source: image.ImageSource = image.createImageSource(png);
+    try {
+      for (let i = 0; i < slices.length; i++) {
+        const slice: CaptureSlice = slices[i];
+        const options: image.DecodingOptions = {
+          desiredRegion: {
+            size: { width: widthPx, height: slice.height },
+            x: 0,
+            y: slice.y
+          }
+        };
+        const part: image.PixelMap = await source.createPixelMap(options);
+        try {
+          out.push(await ShareService.packPng(part));
+        } finally {
+          part.release();
+        }
+      }
+    } finally {
+      source.release();
+    }
+    Logger.info(TAG, `sliced capture into ${out.length} image(s)`);
+    return out;
+  }
+
+  /**
    * 快照 → 消费 → **必定释放**（审查 R15.1）。
    * PixelMap 是原生内存，创建者必须在消费全部结束后释放；过去调用点拿到 PixelMap 后没有 release。
    */
@@ -155,6 +208,13 @@ export class ShareService {
   static describeError(err: BusinessError): string {
     return `code=${err.code}, message=${err.message}`;
   }
+}
+
+/** 切片：序号 / 起始 y / 高度（审查 R15.4 长报告多图输出） */
+export interface CaptureSlice {
+  index: number;
+  y: number;
+  height: number;
 }
 
 /** 出图预算：单张像素尺寸与页数（审查 R15.4） */

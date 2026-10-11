@@ -11,7 +11,7 @@ import { BpDatabase } from '../service/BpDatabase';
 import { RequestGuard } from '../common/RequestGuard';
 import { FileService } from '../service/FileService';
 import { ReportService } from '../service/ReportService';
-import { ShareService } from '../service/ShareService';
+import { CapturePlan, CaptureSlice, ShareService } from '../service/ShareService';
 import { BpLineChart } from '../components/BpLineChart';
 import { ResUtils } from '../common/ResUtils';
 
@@ -171,13 +171,18 @@ struct ReportPage {
   }
 
   /**
-   * 出图预算（审查 R15.4）：超过 8192px 高时**明确提示需要几张**，
-   * 而不是把长文缩到不可读或悄悄截断异常清单。
+   * 出图预算（审查 R15.4）：超过单张上限时给出页数。
+   * 「保存长图」走**切片多图**（真正输出 N 张、不缩图不截断）；
+   * 「分享/打印」仍按单张处理并在超限时明确提示需要几张（多图分享/打印未实现）。
    */
+  private capturePlan(): CapturePlan {
+    return ShareService.planCapture(this.captureHeightVp, this.deviceDensity());
+  }
+
   private withinCaptureBudget(): boolean {
-    const plan = ShareService.planCapture(this.captureHeightVp, this.deviceDensity());
+    const plan: CapturePlan = this.capturePlan();
     if (plan.split) {
-      Logger.warn(TAG, `capture exceeds budget: heightPx=${plan.heightPx}, pages=${plan.pages}`);
+      Logger.warn(TAG, `capture exceeds single-image budget: heightPx=${plan.heightPx}, pages=${plan.pages}`);
       this.toast($r('app.string.report_too_long', plan.pages));
       return false;
     }
@@ -312,10 +317,20 @@ struct ReportPage {
               if (result !== SaveButtonOnClickResult.SUCCESS) {
                 return;
               }
-              if (!this.withinCaptureBudget()) {
-                return;
-              }
               try {
+                const plan: CapturePlan = this.capturePlan();
+                if (plan.split) {
+                  // 审查 R15.4：长报告分多张输出，按序号保存，不缩图也不截断异常清单
+                  const slices: CaptureSlice[] = ShareService.planSlices(plan.heightPx, ShareService.CAPTURE_MAX_HEIGHT_PX);
+                  const png: ArrayBuffer = await this.captureData();
+                  const parts: ArrayBuffer[] = await ShareService.slicePng(png, plan.widthPx, slices);
+                  for (let i = 0; i < parts.length; i++) {
+                    await ShareService.saveToAlbum(this.context(), parts[i]);
+                  }
+                  Logger.info(TAG, `long report saved as ${parts.length} image(s)`);
+                  this.toast($r('app.string.report_multi_images', parts.length));
+                  return;
+                }
                 const data: ArrayBuffer = await this.captureData();
                 await ShareService.saveToAlbum(this.context(), data);
                 this.toast($r('app.string.toast_saved_album'));

@@ -46,7 +46,8 @@ export class BackupService {
       plansOut.push({
         id: p.id, medicationId: p.medicationId, timeSlots: p.timeSlots.slice(),
         startDate: p.startDate, endDate: p.endDate === undefined ? null : p.endDate,
-        isActive: p.isActive, createdAt: p.createdAt, updatedAt: p.updatedAt
+        isActive: p.isActive, createdAt: p.createdAt, updatedAt: p.updatedAt,
+        effectiveFrom: p.effectiveFrom, effectiveTo: p.effectiveTo
       });
     }
     const logsOut: BackupLog[] = [];

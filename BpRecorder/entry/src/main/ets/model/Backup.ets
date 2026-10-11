@@ -61,6 +61,9 @@ export interface BackupPlan {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+  /** 显式有效区间（审查 R01.3；旧备份缺省 → 恢复时按既有列推导） */
+  effectiveFrom?: number;
+  effectiveTo?: number | null;
 }
 
 /** 用药打卡记录（毫秒计划/打卡时间，含状态与备注） */

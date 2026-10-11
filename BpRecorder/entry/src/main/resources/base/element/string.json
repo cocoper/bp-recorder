@@ -1441,6 +1441,10 @@
       "value": "报告过长，需分 %d 张导出；当前版本只支持单张，请缩短周期（例如改用 7 天）"
     },
     {
+      "name": "report_multi_images",
+      "value": "报告较长，已输出 %d 张图片（按顺序拼接即完整报告）"
+    },
+    {
       "name": "report_med_pending_not_due",
       "value": "本期义务尚未到点，暂无到期打卡"
     },

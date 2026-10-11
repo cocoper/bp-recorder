@@ -1264,10 +1264,16 @@ export class BpDatabase implements BackupTarget {
       const fallback: number = DateUtils.now();
       await store.executeSql(
         `INSERT OR REPLACE INTO med_plan
-           (id, medication_id, time_slots, start_date, end_date, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, medication_id, time_slots, start_date, end_date, is_active, created_at, updated_at,
+            effective_from, effective_to)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [p.id, p.medicationId, p.timeSlots.join(','), p.startDate, p.endDate, p.isActive ? 1 : 0,
-          p.createdAt > 0 ? p.createdAt : fallback, p.updatedAt > 0 ? p.updatedAt : fallback]);
+          p.createdAt > 0 ? p.createdAt : fallback, p.updatedAt > 0 ? p.updatedAt : fallback,
+          // 审查 R01.3：备份带区间就照写；旧备份没有则按既有列推导一次，避免恢复后口径不一致
+          p.effectiveFrom === undefined || p.effectiveFrom <= 0
+            ? BpDatabase.planEffectiveFrom(p.startDate, fallback)
+            : p.effectiveFrom,
+          p.effectiveTo === undefined ? BpDatabase.planEffectiveTo(p.endDate) : p.effectiveTo]);
     });
   }
 

@@ -289,6 +289,13 @@ export namespace image {
     release(): void;
   }
   export function createImagePacker(): ImagePacker;
+  export interface Region { size: Size; x: number; y: number }
+  export interface DecodingOptions { desiredRegion?: Region; desiredSize?: Size; editable?: boolean }
+  export interface ImageSource {
+    createPixelMap(options?: DecodingOptions): Promise<PixelMap>;
+    release(): void;
+  }
+  export function createImageSource(buf: ArrayBuffer | Uint8Array): ImageSource;
 }
 `,
     js: `exports.image = {};`

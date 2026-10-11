@@ -1755,6 +1755,18 @@ async function reviewScenarios(): Promise<void> {
     eq(tall.split, true, 'R15 超过 8192px 必须分页输出');
     eq(tall.pages, 2, 'R15 12000px → 2 张');
 
+    // 切片计划：不缩图、不丢尾部，序号连续
+    const slices = ShareService.planSlices(12000, 8192);
+    eq(slices.length, 2, 'R15 12000px 切成 2 段');
+    eq(slices[0].index, 1, 'R15 第一段序号为 1');
+    eq(slices[0].y, 0, 'R15 第一段从 y=0 开始');
+    eq(slices[0].height, 8192, 'R15 第一段取满上限');
+    eq(slices[1].y, 8192, 'R15 第二段紧接其后');
+    eq(slices[1].height, 3808, 'R15 第二段是剩余高度（尾部不被丢弃）');
+    eq(slices[0].height + slices[1].height, 12000, 'R15 各段高度之和等于原图（无重叠无丢失）');
+    const oneSlice = ShareService.planSlices(6000, 8192);
+    eq(oneSlice.length, 1, 'R15 未超限时只有一段');
+
     const nowRef: number = ts(2026, 10, 11, 12, 0);
     const dayMs: number = 24 * 60 * 60 * 1000;
     const entries: TempFileEntry[] = [
