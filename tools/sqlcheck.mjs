@@ -368,15 +368,47 @@ db.close();
 
 // ═══════════════════ 汇总 ═══════════════════
 console.log('================ 校验结果 ================');
-console.log(`断言总数：${passCount + failures.length}    通过：${passCount}    失败：${failures.length}`);
-if (failures.length > 0) {
-  console.log('');
-  console.log('失败项：');
-  for (const f of failures) {
-    console.log(`  ✗ ${f}`);
-  }
-  console.log('');
-  
+// ═══════════════════ 4.5 导入写回的覆盖语义（审查 R10-b/④） ═══════════════════
+group('导入写回：已有自动 pending 时真实打卡必须覆盖而不是撞唯一索引');
+
+const impDb = new DatabaseSync(':memory:');
+for (const sql of DDL_STATEMENTS) {
+  impDb.exec(sql);
+}
+impDb.exec(`INSERT INTO ${T.T_MED} (name, dosage, note, is_active, created_at, updated_at)
+            VALUES ('缬沙坦', '1片', NULL, 1, ${NOW}, ${NOW})`);
+impDb.exec(`INSERT INTO ${T.T_LOG}
+            (medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at)
+            VALUES (1, '缬沙坦', '1片', ${NOW}, NULL, 'pending', NULL, ${NOW}, ${NOW})`);
+
+// 旧写法（直接 insert）在唯一索引上必然失败 —— 这就是「备份里的真实打卡进不去」的机制
+let naiveInsertThrew = false;
+try {
+  impDb.exec(`INSERT INTO ${T.T_LOG}
+              (medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at)
+              VALUES (1, '缬沙坦', '2片', ${NOW}, ${NOW + 300000}, 'taken', NULL, ${NOW}, ${NOW})`);
+} catch (err) {
+  naiveInsertThrew = true;
+}
+ok(naiveInsertThrew, '直接 insert 会撞 UNIQUE(medication_id, scheduled_time)（旧行为确实进不去）');
+
+// 现在的写法：先按 (药品, 计划时间) 更新，未命中才插入 —— 覆盖语义必须成立
+const upd = impDb.prepare(`UPDATE ${T.T_LOG} SET med_name = ?, dosage = ?, taken_time = ?, status = ?,
+                           note = ?, updated_at = ? WHERE medication_id = ? AND scheduled_time = ?`);
+const affected = upd.run('缬沙坦', '2片', NOW + 300000, 'taken', '隔日补记', NOW + 1, 1, NOW).changes;
+eq(affected, 1, '按身份更新命中 1 行（自动 pending 被真实打卡覆盖）');
+const row2 = impDb.prepare(`SELECT status, dosage, taken_time, note FROM ${T.T_LOG}
+                            WHERE medication_id = 1 AND scheduled_time = ${NOW}`).get();
+eq(row2.status, 'taken', '覆盖后状态为 taken');
+eq(row2.dosage, '2片', '覆盖后剂量按文件更新');
+eq(row2.taken_time, NOW + 300000, '覆盖后打卡时间按文件写入');
+eq(row2.note, '隔日补记', '覆盖后备注按文件写入');
+eq(countLogs(impDb), 1, '覆盖语义下不会产生重复行');
+// 未命中时必须能插入（全新记录）
+const affected2 = upd.run('缬沙坦', '1片', null, 'pending', null, NOW + 2, 1, NOW + 86400000).changes;
+eq(affected2, 0, '身份未命中时更新影响 0 行（调用方据此走插入）');
+impDb.close();
+
 // ═══════════════════ 5. v2 → v3：显式有效区间列（审查 R01.3） ═══════════════════
 group('迁移 v2 → v3（计划有效区间显式化）');
 
@@ -446,10 +478,23 @@ if (droppedOk) {
 }
 v2db.close();
 
+console.log(`断言总数：${passCount + failures.length}    通过：${passCount}    失败：${failures.length}`);
+if (failures.length > 0) {
+  console.log('');
+  console.log('失败项：');
+  for (const f of failures) {
+    console.log(`  ✗ ${f}`);
+  }
+  console.log('');
+  
+
+
 console.log('================ 结论 ================');
   console.log('存在失败项，需修正。');
   process.exit(1);
 }
+
+
 console.log('');
 console.log('================ 结论 ================');
 console.log('全部通过：DDL 可执行、迁移顺序正确、约束真实生效。');

@@ -1164,6 +1164,16 @@ export class BpDatabase implements BackupTarget {
       'updated_at': now,
       'source_plan_id': planId === undefined ? null : planId
     };
+    // 审查 R10-b/④：同一 (药品, 计划时间) 已存在时（典型是自动生成的 pending）必须**覆盖更新**，
+    // 否则普通 insert 会撞 UNIQUE(medication_id, scheduled_time) 抛错，真实打卡就进不去。
+    const predicates: relationalStore.RdbPredicates = new relationalStore.RdbPredicates(DbConst.T_LOG);
+    predicates.equalTo('medication_id', medicationId);
+    predicates.equalTo('scheduled_time', scheduledTime);
+    const affected: number = await store.update(values, predicates);
+    if (affected > 0) {
+      Logger.info(TAG, `import log overwrote existing row: med=${medicationId}, scheduled=${scheduledTime}`);
+      return affected;
+    }
     return store.insert(DbConst.T_LOG, values);
     });
   }
