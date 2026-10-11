@@ -193,13 +193,15 @@ struct ImportPage {
         this.applyPreview(preview.totalRows, preview.drafts.length, preview.duplicateCount,
           preview.errors, preview.previewLines);
       } else {
-        const keys = ImportService.buildMedKeySet(await db.queryMedLogDedupeTuples());
+        const tuples = await db.queryMedLogDedupeTuples();
+        const keys = ImportService.buildMedKeySet(tuples);
+        const pendingKeys = ImportService.buildMedPendingKeySet(tuples);
         const nameToId: Map<string, number> = new Map<string, number>();
         const meds: Medication[] = await db.queryMedications();
         for (let i = 0; i < meds.length; i++) {
           nameToId.set(meds[i].name, meds[i].id);
         }
-        const preview: MedImportPreview = ImportService.parseMedTable(rows, vocab, keys, nameToId);
+        const preview: MedImportPreview = ImportService.parseMedTable(rows, vocab, keys, nameToId, pendingKeys);
         this.medPreview = preview;
         this.applyPreview(preview.totalRows, preview.drafts.length, preview.duplicateCount,
           preview.errors, preview.previewLines);

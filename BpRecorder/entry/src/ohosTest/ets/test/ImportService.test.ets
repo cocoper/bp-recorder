@@ -130,7 +130,9 @@ export default function importServiceTest() {
         tuples.push({
           medicationId: logs[i].medicationId,
           medName: logs[i].medName,
-          scheduledTime: logs[i].scheduledTime
+          scheduledTime: logs[i].scheduledTime,
+          // 审查 R10-b：库内状态参与判定（此处为真实打卡记录，故原样回导仍判重复）
+          status: `${logs[i].status}`
         });
       }
       const keys: Set<string> = ImportService.buildMedKeySet(tuples);

@@ -156,6 +156,8 @@ export interface MedDedupeTuple {
   medicationId: number;
   medName: string;
   scheduledTime: number;
+  /** 库内状态（审查 R10-b）：导入需要区分「自动生成的 pending」与真实打卡记录 */
+  status: string;
 }
 
 /** 报告异常清单行（FR-10.2 板块 7） */

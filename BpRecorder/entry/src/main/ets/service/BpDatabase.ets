@@ -1113,7 +1113,7 @@ export class BpDatabase {
   async queryMedLogDedupeTuples(): Promise<MedDedupeTuple[]> {
     const store: relationalStore.RdbStore = this.requireStore();
     const rs: relationalStore.ResultSet = await store.querySql(
-      `SELECT medication_id, med_name, scheduled_time FROM ${DbConst.T_LOG}`
+      `SELECT medication_id, med_name, scheduled_time, status FROM ${DbConst.T_LOG}`
     );
     const out: MedDedupeTuple[] = [];
     try {
@@ -1121,7 +1121,8 @@ export class BpDatabase {
         out.push({
           medicationId: rs.getLong(0),
           medName: rs.getString(1),
-          scheduledTime: rs.getLong(2)
+          scheduledTime: rs.getLong(2),
+          status: rs.getString(3)
         });
       }
     } finally {

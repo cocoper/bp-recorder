@@ -156,10 +156,23 @@ function reminderStub(failHour=-1) {
       errors:[],duplicateCount:0,previewLines:[],totalRows:1 });
     return m.dosage;
   });
-  await check('R10-b', '已有自动pending不应把备份taken当普通重复丢弃', 1, () => {
+  // R10-b 表达改写（报告允许）：修复后语义是「备份里的真实打卡覆盖自动 pending，即更新 1 条」。
+  // 原写法只传键集合，无法表达「库内那条是自动 pending 还是真实打卡」——
+  // 现在通过 existingPendingKeys（由库内 status 构造）表达同一业务含义，并另加对照组（真实打卡仍判重复）。
+  await check('R10-b', '已有自动pending不应把备份taken当普通重复丢弃（改写为：更新 1 条）', 1, () => {
     const l = log(ts(11,8),ts(11,8,5));
+    const tuples = [{ medicationId: 1, medName: l.medName, scheduledTime: l.scheduledTime, status: 'pending' }];
     const keys = new Set([ImportService.medKeyById(1, l.scheduledTime), ImportService.medKeyByName(l.medName,l.scheduledTime)]);
-    return ImportService.parseMedTable(Csv.parse(ExportService.buildMedCsv([l],vocab)),vocab,keys,new Map([[l.medName,1]])).drafts.length;
+    const pendingKeys = ImportService.buildMedPendingKeySet(tuples);
+    return ImportService.parseMedTable(Csv.parse(ExportService.buildMedCsv([l],vocab)),vocab,keys,
+      new Map([[l.medName,1]]), pendingKeys).drafts.length;
+  });
+  await check('R10-b2', '已有真实打卡时原样回导仍判重复（不重复入库）', 0, () => {
+    const l = log(ts(11,8),ts(11,8,5));
+    const tuples = [{ medicationId: 1, medName: l.medName, scheduledTime: l.scheduledTime, status: 'taken' }];
+    return ImportService.parseMedTable(Csv.parse(ExportService.buildMedCsv([l],vocab)),vocab,
+      ImportService.buildMedKeySet(tuples), new Map([[l.medName,1]]),
+      ImportService.buildMedPendingKeySet(tuples)).drafts.length;
   });
   await check('R10-c', '两个同名药品的独立打卡备份不得被合并', 2, () => {
     const a = log(ts(11,8),ts(11,8,5));

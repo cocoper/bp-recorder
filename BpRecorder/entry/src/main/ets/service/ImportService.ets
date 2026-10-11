@@ -120,6 +120,24 @@ export class ImportService {
   }
 
   /** 由数据库查询结果构造用药判重键集合（同时登记 id 键与名称键，兼容改名场景） */
+  /**
+   * 「自动生成的待服」键集合（审查 R10-b）：库内 status = pending 的记录。
+   * 备份里的真实打卡（taken/skipped/missed）遇到这些键时**覆盖**而不是被当重复丢弃 ——
+   * 因为 pending 只是按计划预生成的占位，不代表用户已经打过卡。
+   */
+  static buildMedPendingKeySet(tuples: MedDedupeTuple[]): Set<string> {
+    const keys: Set<string> = new Set<string>();
+    for (let i = 0; i < tuples.length; i++) {
+      const t: MedDedupeTuple = tuples[i];
+      if (t.status !== `${MedLogStatus.PENDING}`) {
+        continue;
+      }
+      keys.add(ImportService.medKeyById(t.medicationId, t.scheduledTime));
+      keys.add(ImportService.medKeyByName(t.medName, t.scheduledTime));
+    }
+    return keys;
+  }
+
   static buildMedKeySet(tuples: MedDedupeTuple[]): Set<string> {
     const keys: Set<string> = new Set<string>();
     for (let i = 0; i < tuples.length; i++) {
@@ -337,7 +355,7 @@ export class ImportService {
    * @param nameToId 现有药品「名称 → id」映射（用于判重与建关联）
    */
   static parseMedTable(rows: string[][], vocab: CsvVocab, existingKeys: Set<string>,
-    nameToId: Map<string, number>): MedImportPreview {
+    nameToId: Map<string, number>, existingPendingKeys?: Set<string>): MedImportPreview {
     const data: string[][] = Csv.normalize(rows);
     const drafts: MedImportDraft[] = [];
     const errors: ImportIssue[] = [];
@@ -454,7 +472,18 @@ export class ImportService {
           || (idKey !== null && (existingKeys.has(idKey) || seen.has(idKey)));
         seen.add(nameKey);
       }
-      if (isDup) {
+      // 审查 R10-b：库内只是「按计划预生成的 pending」时，文件里的真实打卡必须覆盖它。
+      // 报告允许该反例的表达改写为「更新 1 条」，此处即对应「不再丢弃、允许覆盖」。
+      let pendingOverwrite: boolean = false;
+      if (isDup && status !== MedLogStatus.PENDING && existingPendingKeys !== undefined) {
+        const collidesWithPending: boolean = existingPendingKeys.has(nameKey)
+          || (stableKey !== null && existingPendingKeys.has(stableKey))
+          || (idKey !== null && existingPendingKeys.has(idKey));
+        if (collidesWithPending) {
+          pendingOverwrite = true;
+        }
+      }
+      if (isDup && !pendingOverwrite) {
         duplicateCount++;
         continue;
       }

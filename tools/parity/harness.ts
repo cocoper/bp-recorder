@@ -18,7 +18,7 @@ import {
   ColRole, GenericImportService, GenericBpPreview, Detection, MappingPlan, ROLE_COUNT
 } from './src/service/GenericImportService';
 import { BpRecord } from './src/model/BpRecord';
-import { Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
+import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
 import { BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
@@ -682,7 +682,7 @@ eq(medImport1.drafts[4].status, MedLogStatus.PENDING, '待服状态回读');
 eq(medImport1.drafts[5].takenTime, ts(2026, 10, 6, 0, 10), '跨零点打卡时间还原为次日');
 eq(medImport1.drafts[0].takenTime, ts(2026, 10, 1, 7, 35), '同日打卡时间保持原值');
 
-const medTuples = medLogs.map((l) => ({ medicationId: l.medicationId, medName: l.medName, scheduledTime: l.scheduledTime }));
+const medTuples = medLogs.map((l) => ({ medicationId: l.medicationId, medName: l.medName, scheduledTime: l.scheduledTime, status: `${l.status}` }));
 const medKeys: Set<string> = ImportService.buildMedKeySet(medTuples);
 const nameToId: Map<string, number> = new Map<string, number>();
 nameToId.set('缬沙坦', 1);
@@ -1557,6 +1557,32 @@ async function reviewScenarios(): Promise<void> {
       RPT_VOCAB,
       ts(2026, 10, 18, 12, 0));
     ok(r11b !== null && r11b.hasMedicationData === false, 'R11 完全无用药数据的周期不长出小结');
+  }
+
+  group('审查反例 R10-b（备份里的真实打卡覆盖自动 pending）');
+  {
+    const sched: number = ts(2026, 10, 11, 8, 0);
+    const takenLog: MedLog = mlog(sched, MedLogStatus.TAKEN, ts(2026, 10, 11, 8, 5), 1);
+    const csv: string = ExportService.buildMedCsv([takenLog], VOCAB);
+    // 库内已有一条「按计划预生成的 pending」（不是用户打的卡）
+    const tuples: MedDedupeTuple[] = [{
+      medicationId: 1, medName: '测试药1', scheduledTime: sched, status: `${MedLogStatus.PENDING}`
+    }];
+    const keys: Set<string> = ImportService.buildMedKeySet(tuples);
+    const pendingKeys: Set<string> = ImportService.buildMedPendingKeySet(tuples);
+    const nameToId: Map<string, number> = new Map<string, number>();
+    nameToId.set('测试药1', 1);
+    const pv = ImportService.parseMedTable(Csv.parse(csv), VOCAB, keys, nameToId, pendingKeys);
+    eq(pv.drafts.length, 1, 'R10-b 备份里的 taken 覆盖自动 pending（不再当重复丢弃）');
+    eq(`${pv.drafts[0].status}`, `${MedLogStatus.TAKEN}`, 'R10-b 保留文件里的真实状态');
+
+    // 对照组：库内是**真实打卡**（非 pending）时仍按重复处理，不产生重复行
+    const realTuples: MedDedupeTuple[] = [{
+      medicationId: 1, medName: '测试药1', scheduledTime: sched, status: `${MedLogStatus.TAKEN}`
+    }];
+    const pv2 = ImportService.parseMedTable(Csv.parse(csv), VOCAB,
+      ImportService.buildMedKeySet(realTuples), nameToId, ImportService.buildMedPendingKeySet(realTuples));
+    eq(pv2.drafts.length, 0, 'R10-b 已有真实打卡时仍判重复（不重复入库）');
   }
 
   group('审查反例 R17（测试实例隔离）');
