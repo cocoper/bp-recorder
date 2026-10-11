@@ -1613,6 +1613,10 @@
       "value": "测量时间不能晚于当前时间"
     },
     {
+      "name": "err_plan_count_invalid",
+      "value": "每日次数必须是正整数（不接受 1abc 这类带前缀的写法）"
+    },
+    {
       "name": "err_imp_csv_broken",
       "value": "CSV 结构错误（引号未闭合、字段超长或列数超限）"
     }

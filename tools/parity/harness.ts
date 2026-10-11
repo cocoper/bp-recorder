@@ -1972,6 +1972,21 @@ async function reviewScenarios(): Promise<void> {
     eq(planPv.drafts[0].timeSlots[1], '19:30', '往返：时点内容一致');
     eq(planPv.drafts[0].startDate, '2026-10-01', '往返：开始日期一致');
     eq(planPv.drafts[0].endDate, null, '往返：长期计划 endDate 保持 null');
+
+    // R13：每日次数必须是整个字符串的正整数（拒绝 1abc 这类前缀写法）
+    const badCount: string = `${VOCAB.planHeaders.slice(0, 6).join(',')}\n` +
+      `缬沙坦,1片,1abc,07:15,2026-10-01,`;
+    const badCountPv = ImportService.parsePlanTable(Csv.parse(badCount), VOCAB, new Set<string>());
+    eq(badCountPv.drafts.length, 0, 'R13 「1abc 次」不得入库');
+    eq(badCountPv.errors.length, 1, 'R13 非法次数报 1 条明确错误');
+    const goodCount: string = `${VOCAB.planHeaders.slice(0, 6).join(',')}\n` +
+      `缬沙坦,1片,2,07:15;19:30,2026-10-01,`;
+    const goodCountPv = ImportService.parsePlanTable(Csv.parse(goodCount), VOCAB, new Set<string>());
+    eq(goodCountPv.drafts.length, 1, 'R13 合法次数（2 与两个时点相符）正常入库');
+    const mismatch: string = `${VOCAB.planHeaders.slice(0, 6).join(',')}\n` +
+      `缬沙坦,1片,3,07:15;19:30,2026-10-01,`;
+    eq(ImportService.parsePlanTable(Csv.parse(mismatch), VOCAB, new Set<string>()).errors.length, 1,
+      'R13 次数与时点数量不符时报错');
   }
 
   group('导入提交侧等价（预览承诺 == 实际写入）');

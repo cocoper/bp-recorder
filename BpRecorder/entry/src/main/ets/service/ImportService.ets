@@ -689,7 +689,20 @@ export class ImportService {
         continue;
       }
       const declaredCount: string = Csv.cell(row, 2);
-      if (declaredCount.length > 0 && Number.parseInt(declaredCount, 10) !== slots.length) {
+      // 审查 R13：每日次数必须**整个字符串**是正整数 —— parseInt 过去会接受 1abc 这类前缀写法，
+      // 于是「1abc 次」被静默当成 1 次并通过校验。这里改用与录入同源的严格解析。
+      if (declaredCount.length > 0) {
+        const declared: number | null = BpValidator.parsePositiveInt(declaredCount);
+        if (declared === null) {
+          errors.push({
+            lineNo: lineNo,
+            reason: $r('app.string.err_plan_count_invalid'),
+            detail: declaredCount
+          });
+          continue;
+        }
+      }
+      if (declaredCount.length > 0 && BpValidator.parsePositiveInt(declaredCount) !== slots.length) {
         errors.push({
           lineNo: lineNo,
           reason: $r('app.string.err_slot_count_mismatch'),
