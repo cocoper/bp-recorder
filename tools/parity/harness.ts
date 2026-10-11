@@ -21,6 +21,7 @@ import { BpRecord } from './src/model/BpRecord';
 import { Medication, MedLog, MedPlan, PlanExportRow } from './src/model/Med';
 import { BpDatabase } from './src/service/BpDatabase';
 import { common } from '@kit.AbilityKit';
+import { relationalStore } from '@kit.ArkData';
 
 let passCount = 0;
 const failures: string[] = [];
@@ -1240,6 +1241,35 @@ async function reviewScenarios(): Promise<void> {
       clearGuarded = true;
     }
     ok(clearGuarded, 'R17 生产实例上的 clearAll 身份核验必须拒绝');
+  }
+
+  group('审查反例 R18（初始化失败可重试）');
+  {
+    let opens = 0;
+    const arkStore = relationalStore as unknown as Record<string, unknown>;
+    // 桩模块是空对象（见 tools/parity/run.mjs 的 STUBS）：注入到 doInit 用得到的常量
+    arkStore['SecurityLevel'] = { S1: 1 };
+    const original = arkStore['getRdbStore'];
+    arkStore['getRdbStore'] = async () => {
+      opens++;
+      throw new Error('injected open failure');
+    };
+    const db: BpDatabase = new BpDatabase();
+    let firstThrew = false;
+    let secondThrew = false;
+    try {
+      await db.init(ctxStub);
+    } catch (err) {
+      firstThrew = true;
+    }
+    try {
+      await db.init(ctxStub);
+    } catch (err) {
+      secondThrew = true;
+    }
+    eq(opens, 2, 'R18-a 一次初始化失败后再次 init 必须重新尝试打开数据库');
+    ok(firstThrew && secondThrew, 'R18-a 两次失败都必须抛给调用方（不得静默成功）');
+    arkStore['getRdbStore'] = original;
   }
 }
 

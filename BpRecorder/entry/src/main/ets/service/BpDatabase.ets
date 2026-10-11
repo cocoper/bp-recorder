@@ -183,7 +183,16 @@ export class BpDatabase {
       return;
     }
     if (this.initPromise === null) {
-      this.initPromise = this.doInit(context, storeName);
+      // 审查 R18：失败的初始化不能把 in-flight Promise 永久缓存住 —— 否则重试按钮永远拿到同一个失败结果。
+      // 这里在失败分支清掉缓存；并发调用在失败前仍共用同一次任务（不重复打开）。
+      const attempt: Promise<void> = this.doInit(context, storeName).catch((err: Error) => {
+        this.initPromise = null;
+        const be = err as BusinessError;
+        Logger.error(TAG, `database init failed (will retry on next call): code=${be.code}, message=${be.message}`);
+        // ArkTS 的 arkts-limited-throw 只接受静态类型为 Error 的抛出值
+        throw err;
+      });
+      this.initPromise = attempt;
     }
     return this.initPromise;
   }
@@ -193,21 +202,42 @@ export class BpDatabase {
       name: storeName,
       securityLevel: relationalStore.SecurityLevel.S1
     };
-    const store: relationalStore.RdbStore = await relationalStore.getRdbStore(context, config);
-    for (let i = 0; i < DDL.length; i++) {
-      await store.executeSql(DDL[i]);
+    let store: relationalStore.RdbStore | null = null;
+    try {
+      store = await relationalStore.getRdbStore(context, config);
+      for (let i = 0; i < DDL.length; i++) {
+        await store.executeSql(DDL[i]);
+      }
+      await BpDatabase.migrate(store);
+      this.store = store;
+      this.openedStoreName = storeName;
+      Logger.info(TAG, `database ready, storeName=${storeName}, schemaVersion=${DbConst.SCHEMA_VERSION}`);
+    } catch (err) {
+      // 半开连接必须关掉：否则重试会同时持有两个连接，且文件句柄泄漏（审查 R18）
+      if (store !== null) {
+        try {
+          await store.close();
+        } catch (closeErr) {
+          const ce = closeErr as BusinessError;
+          Logger.error(TAG, `close half-open store failed: code=${ce.code}, message=${ce.message}`);
+        }
+      }
+      // ArkTS 只允许抛 Error（arkts-limited-throw）：是 Error 就原样抛（保留 code 等字段），
+      // 否则包装成 Error 再抛。
+      const failure: Error = err instanceof Error ? err : new Error(`database init failed: ${String(err)}`);
+      throw failure;
     }
-    await BpDatabase.migrate(store);
-    this.store = store;
-    this.openedStoreName = storeName;
-    Logger.info(TAG, `database ready, storeName=${storeName}, schemaVersion=${DbConst.SCHEMA_VERSION}`);
   }
 
   /** 版本化迁移：以 PRAGMA user_version 为基准，整体在一个事务内完成 */
   private static async migrate(store: relationalStore.RdbStore): Promise<void> {
     const current: number = await BpDatabase.readUserVersion(store);
-    if (current >= DbConst.SCHEMA_VERSION) {
+    if (current === DbConst.SCHEMA_VERSION) {
       return;
+    }
+    if (current > DbConst.SCHEMA_VERSION) {
+      // 审查 R18：未来版本的库不能被旧应用当正常库写入（会破坏用户数据）。
+      throw new Error(`数据库结构版本 ${current} 高于本应用支持的 ${DbConst.SCHEMA_VERSION}：请升级应用后再使用，本版本不写入该库`);
     }
 
     await store.beginTransaction();
