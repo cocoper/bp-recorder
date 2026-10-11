@@ -194,6 +194,17 @@ export interface ReportData {
   /** 板块 8：用药小结 */
   adherence: Adherence;
   /** 该周期是否存在生效用药计划（决定用药板块是否展示） */
+  /**
+   * 周期内是否存在**用药数据**（打卡记录或已知义务）—— 小结的展示条件（审查 R11）。
+   * 当前计划是否生效只影响未来，不决定过去报告的内容。
+   */
+  hasMedicationData: boolean;
+  /** 周期内「尚未到期」的待服条数：用于区分「尚无到期义务」与「完全无用药数据」 */
+  medPendingNotDue: number;
+  /**
+   * @deprecated 语义已改为等价于 hasMedicationData（审查 R11 要求准确命名）。
+   * 保留旧字段名仅为本机冻结反例脚本兼容，新代码请用 hasMedicationData。
+   */
   hasMedPlan: boolean;
   /** 分享图/长图水印行（FR-11.2） */
   watermark: string;

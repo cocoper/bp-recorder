@@ -424,8 +424,8 @@ struct ReportPage {
           }, (item: AbnormalItem) => `${item.measureTime}_${item.systolic}_${item.diastolic}_${item.period}`)
         }
 
-        // 板块 8：用药小结
-        if (this.report.hasMedPlan) {
+        // 板块 8：用药小结（审查 R11：条件看周期内用药数据，不看「当前是否有生效计划」）
+        if (this.report.hasMedicationData) {
           Text($r('app.string.report_med_title'))
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
@@ -436,6 +436,13 @@ struct ReportPage {
             .fontSize(13)
             .fontColor($r('app.color.print_text_primary'))
             .width('100%')
+          if (this.report.adherence.due === 0 && this.report.medPendingNotDue > 0) {
+            // 与「完全没有用药数据」区分开：本期有义务，只是还没到点
+            Text($r('app.string.report_med_pending_not_due'))
+              .fontSize(12)
+              .fontColor($r('app.color.print_text_secondary'))
+              .width('100%')
+          }
         }
 
         Divider().color($r('app.color.print_divider'))

@@ -126,9 +126,28 @@ export class ReportService {
       dailyPoints: dailyPoints,
       abnormals: abnormals,
       adherence: adherence,
-      hasMedPlan: ReportService.countActivePlans(plans) > 0,
+      // 审查 R11：小结看「周期内有没有用药数据」，而不是「当前有没有生效计划」。
+      // 过去归档/计划到期后，同一历史周期的用药小结会凭空消失（数字前后不一致）。
+      hasMedicationData: scopedLogs.length > 0,
+      medPendingNotDue: ReportService.countPendingNotDue(scopedLogs, now),
+      hasMedPlan: scopedLogs.length > 0,
       watermark: watermark
     };
+  }
+
+  /**
+   * 周期内「尚未到期」的待服条数（审查 R11）：
+   * 用于把「本期有义务但还没到点」与「本期完全没有用药数据」区分开来展示。
+   */
+  static countPendingNotDue(logs: MedLog[], now: number): number {
+    let count: number = 0;
+    for (let i = 0; i < logs.length; i++) {
+      const log: MedLog = logs[i];
+      if (log.status === MedLogStatus.PENDING && log.scheduledTime > now) {
+        count++;
+      }
+    }
+    return count;
   }
 
   /** 区间内的打卡记录 */

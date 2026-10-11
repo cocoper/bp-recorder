@@ -1539,6 +1539,26 @@ async function reviewScenarios(): Promise<void> {
       'R14 容量契约常量齐备（10 MiB / 50000 行 / 64 列 / 4096 字符）');
   }
 
+  group('审查反例 R11（历史报告的用药小结）');
+  {
+    const r11 = ReportService.build('week', ReportService.weekRange(ts(2026, 10, 11, 12, 0)),
+      [rec(ts(2026, 10, 11, 8, 0), 120, 80, 70, 1)],
+      [mlog(ts(2026, 10, 11, 8, 0), MedLogStatus.TAKEN, ts(2026, 10, 11, 8, 5), 1)],
+      [], RPT_VOCAB,
+      ts(2026, 10, 11, 12, 0));
+    ok(r11 !== null, 'R11 有血压记录时报告可生成');
+    if (r11 !== null) {
+      eq(r11.hasMedicationData, true, 'R11-a 周期内有历史打卡 → 显示用药小结（与当前计划是否生效无关）');
+      eq(r11.hasMedPlan, true, 'R11 兼容别名与 hasMedicationData 一致');
+      eq(r11.medPendingNotDue, 0, 'R11 已服记录不计入「尚未到点」');
+    }
+    const r11b = ReportService.build('week', ReportService.weekRange(ts(2026, 10, 18, 12, 0)),
+      [rec(ts(2026, 10, 18, 8, 0), 120, 80, 70, 2)], [], [], 
+      RPT_VOCAB,
+      ts(2026, 10, 18, 12, 0));
+    ok(r11b !== null && r11b.hasMedicationData === false, 'R11 完全无用药数据的周期不长出小结');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;
