@@ -9,7 +9,7 @@ import { StatsService } from './src/service/StatsService';
 import { MedService } from './src/service/MedService';
 import { BpValidator } from './src/service/BpValidator';
 import { ExportService } from './src/service/ExportService';
-import { ImportService, MedImportDraft } from './src/service/ImportService';
+import { ImportService, MedImportDraft , PlanImportPreview } from './src/service/ImportService';
 import { ReportService } from './src/service/ReportService';
 import { CsvVocab, ImportVocab } from './src/common/Vocab';
 import { CheckInAction, GradeLevel, GradeStandard, MedLogStatus, Period } from './src/model/Types';
@@ -18,8 +18,8 @@ import { LooseParse, BpPairValue } from './src/common/LooseParse';
 import {
   ColRole, GenericImportService, GenericBpPreview, Detection, MappingPlan, ROLE_COUNT
 } from './src/service/GenericImportService';
-import { BpRecord } from './src/model/BpRecord';
-import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow } from './src/model/Med';
+import { BpRecord , BpRecordDraft } from './src/model/BpRecord';
+import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow , MedPlanDraft, MedicationDraft } from './src/model/Med';
 import { BackupTarget, BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
@@ -1972,6 +1972,123 @@ async function reviewScenarios(): Promise<void> {
     eq(planPv.drafts[0].timeSlots[1], '19:30', '往返：时点内容一致');
     eq(planPv.drafts[0].startDate, '2026-10-01', '往返：开始日期一致');
     eq(planPv.drafts[0].endDate, null, '往返：长期计划 endDate 保持 null');
+  }
+
+  group('导入提交侧等价（预览承诺 == 实际写入）');
+  {
+    // 假 DB：把写入调用原样记下来，用来比对「预览里承诺的」与「真正写进去的」
+    const bpWrites: BpRecordDraft[] = [];
+    let bpTxCount = 0;
+    const bpFake = {
+      runInTransaction: async (work: (tx: TxSession) => Promise<void>): Promise<void> => {
+        bpTxCount++;
+        await work({ store: null } as unknown as TxSession);
+      },
+      batchInsertBp: async (drafts: BpRecordDraft[]): Promise<number> => {
+        for (const d of drafts) {
+          bpWrites.push(d);
+        }
+        return drafts.length;
+      }
+    } as unknown as BpDatabase;
+
+    const bpSrc: BpRecord = rec(ts(2026, 10, 11, 9, 0) + 777, 126, 84, null, 1);
+    const bpPreview = ImportService.parseBpTable(
+      Csv.parse(ExportService.buildBpCsv([bpSrc], VOCAB)), VOCAB, new Set<string>());
+    const bpResult = await ImportService.commitBp(bpFake, bpPreview);
+    eq(bpResult.inserted, 1, '提交侧：血压报告 inserted=1');
+    eq(bpTxCount, 1, '提交侧：血压在单事务内写');
+    eq(bpWrites.length, 1, '提交侧：实际写入 1 条');
+    eq(bpWrites[0].measureTime, bpSrc.measureTime, '提交侧：写入的测量时间与源一致（含毫秒）');
+    eq(bpWrites[0].systolic, 126, '提交侧：写入的收缩压与源一致');
+    eq(bpWrites[0].heartRate, null, '提交侧：写入的空心率仍是 null');
+
+    // 打卡：新药 + 已服/漏服两条
+    const medLogCalls: Array<Record<string, unknown>> = [];
+    const medInserts: Array<Record<string, unknown>> = [];
+    const medFake = {
+      runInTransaction: async (work: (tx: TxSession) => Promise<void>): Promise<void> => {
+        await work({ store: null } as unknown as TxSession);
+      },
+      queryMedications: async (): Promise<Medication[]> => [],
+      insertMedication: async (draft: MedicationDraft): Promise<number> => {
+        medInserts.push({ name: draft.name, dosage: draft.dosage, note: draft.note });
+        return 42;
+      },
+      insertMedLogForImport: async (medicationId: number, medName: string, dosage: string,
+        scheduledTime: number, status: MedLogStatus, takenTime: number | null,
+        note: string | null): Promise<number> => {
+        medLogCalls.push({
+          medicationId: medicationId, medName: medName, dosage: dosage, scheduledTime: scheduledTime,
+          status: `${status}`, takenTime: takenTime, note: note
+        });
+        return 1;
+      }
+    } as unknown as BpDatabase;
+
+    const medLogs: MedLog[] = [
+      { id: 1, medicationId: 9, medName: '新药A', dosage: '2片', scheduledTime: ts(2026, 10, 11, 7, 0),
+        takenTime: ts(2026, 10, 11, 7, 5), status: MedLogStatus.TAKEN, note: '早餐后',
+        createdAt: 0, updatedAt: 0 },
+      { id: 2, medicationId: 9, medName: '新药A', dosage: '2片', scheduledTime: ts(2026, 10, 11, 19, 0),
+        takenTime: null, status: MedLogStatus.MISSED, note: null, createdAt: 0, updatedAt: 0 }
+    ];
+    const medPreview = ImportService.parseMedTable(
+      Csv.parse(ExportService.buildMedCsv(medLogs, VOCAB)), VOCAB, new Set<string>(),
+      new Map<string, number>(), undefined, new Set<string>());
+    eq(medPreview.drafts.length, 2, '提交侧：打卡预览 2 条');
+    const medResult = await ImportService.commitMed(medFake, medPreview);
+    eq(medResult.inserted, 2, '提交侧：打卡报告 inserted=2');
+    eq(medInserts.length, 1, '提交侧：新药只建一次档案（两条打卡共用一个 id）');
+    eq(medInserts[0].name, '新药A', '提交侧：建档用的药品名来自预览');
+    eq(medInserts[0].dosage, '2片', '提交侧：建档用的剂量来自预览');
+    eq(medLogCalls.length, 2, '提交侧：两次打卡写入');
+    eq(medLogCalls[0].medicationId, 42, '提交侧：打卡写新建档案的 id');
+    eq(medLogCalls[0].takenTime, ts(2026, 10, 11, 7, 5), '提交侧：打卡时间逐字段一致');
+    eq(medLogCalls[0].note, '早餐后', '提交侧：备注逐字段一致');
+    eq(medLogCalls[1].takenTime, null, '提交侧：漏服不造出打卡时间');
+    eq(`${medLogCalls[1].status}`, `${MedLogStatus.MISSED}`, '提交侧：状态逐字段一致');
+
+    // 计划：已有档案时必须真同步剂量（R10-a 的正式化）
+    const planMeds: Medication[] = [med(1, '缬沙坦')];
+    const planUpdates: Array<Record<string, unknown>> = [];
+    const planUpserts: Array<Record<string, unknown>> = [];
+    let deletedFuture = 0;
+    const planFake = {
+      runInTransaction: async (work: (tx: TxSession) => Promise<void>): Promise<void> => {
+        await work({ store: null } as unknown as TxSession);
+      },
+      queryMedications: async (): Promise<Medication[]> => planMeds,
+      setMedicationActive: async (): Promise<void> => {},
+      updateMedication: async (next: Medication): Promise<number> => {
+        planUpdates.push({ id: next.id, dosage: next.dosage, note: next.note });
+        return next.id;
+      },
+      deleteFuturePendingLogs: async (): Promise<number> => {
+        deletedFuture++;
+        return 0;
+      },
+      upsertPlan: async (draft: MedPlanDraft): Promise<number> => {
+        planUpserts.push({
+          medicationId: draft.medicationId, timeSlots: draft.timeSlots.join(','),
+          startDate: draft.startDate, endDate: draft.endDate
+        });
+        return 7;
+      }
+    } as unknown as BpDatabase;
+    const planPreview: PlanImportPreview = {
+      drafts: [{ medName: '缬沙坦', dosage: '2片', timeSlots: ['07:15', '19:30'],
+        startDate: '2026-10-11', endDate: null, note: '医嘱加量' }],
+      duplicateCount: 0, errors: [], previewLines: [], totalRows: 1
+    };
+    const planResult = await ImportService.commitPlan(planFake, planPreview);
+    eq(planResult.inserted, 1, '提交侧：计划报告 inserted=1');
+    eq(planUpdates.length, 1, '提交侧：已有档案时真的执行了一次更新（剂量同步）');
+    eq(planUpdates[0].dosage, '2片', '提交侧：同步的剂量来自预览');
+    eq(deletedFuture, 1, '提交侧：写入计划前清掉旧的未来待服（P1-3）');
+    eq(planUpserts.length, 1, '提交侧：计划 upsert 一次');
+    eq(planUpserts[0].timeSlots, '07:15,19:30', '提交侧：计划时点逐字段一致');
+    eq(planUpserts[0].endDate, null, '提交侧：长期计划 endDate 保持 null');
   }
 
   group('审查反例 R17（测试实例隔离）');
