@@ -6,7 +6,7 @@ import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { VocabFactory } from '../common/Vocab';
 import { Medication, MedicationDraft, MedPlan, MedPlanDraft , ReminderSyncResult } from '../model/Med';
-import { BpDatabase, SaveMedicationPlanResult, TxSession } from '../service/BpDatabase';
+import { SavedMedicationPlan, BpDatabase, SaveMedicationPlanResult, TxSession } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
 import { LabeledInput } from '../components/LabeledInput';
@@ -211,10 +211,11 @@ struct MedPlanEditPage {
         },
         regenerateFrom: now,
         preGenDays: MedLimits.PRE_GEN_DAYS
-      }, async (tx: TxSession, medicationId: number): Promise<number> => {
-        const plans: MedPlan[] = await db.queryActivePlans();
-        const meds: Medication[] = await db.queryMedications();
-        return db.insertMissingLogs(MedService.pendingDrafts(plans, meds, now, MedLimits.PRE_GEN_DAYS), tx);
+      }, async (tx: TxSession, saved: SavedMedicationPlan): Promise<number> => {
+        // 真机实测：事务内查不到本事务未提交的写入，所以这里**直接用**刚写入的档案与计划，
+        // 不回库自查（否则会生成 0 条待服 —— 离线单测发现不了，真机 Hypium 逮住了）
+        return db.insertMissingLogs(
+          MedService.pendingDrafts([saved.plan], [saved.medication], now, MedLimits.PRE_GEN_DAYS), tx);
       });
 
       // 只有提交成功后才更新页面状态（失败时页面仍指向旧对象）

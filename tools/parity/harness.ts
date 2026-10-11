@@ -20,7 +20,7 @@ import {
 } from './src/service/GenericImportService';
 import { BpRecord , BpRecordDraft } from './src/model/BpRecord';
 import { MedDedupeTuple, Medication, MedLog, MedLogDraft, MedPlan, PlanExportRow , MedPlanDraft, MedicationDraft } from './src/model/Med';
-import { BackupTarget, BpDatabase, TxSession } from './src/service/BpDatabase';
+import { BackupTarget, BpDatabase, TxSession , SavedMedicationPlan } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
 import { BackupService } from './src/service/BackupService';
@@ -2228,6 +2228,36 @@ async function reviewScenarios(): Promise<void> {
     }
   }
 
+  group('事务契约：事务内的非会话写入必须显式失败（真机联调发现的自我死锁）');
+  {
+    // 真机 Hypium 现象：事务内调用「不传 TxSession」的写入会去排自己持有的队列 → 5 秒超时（挂住）。
+    // 现在必须变成**立即抛出可读错误**，而不是把调用方/界面挂死。
+    const guardDb: BpDatabase = BpDatabase.createIsolated('bp_recorder_unittest_guard.db');
+    guardDb.attachStoreStub({ auditOnly: true });
+    let nestedRejected: boolean = false;
+    try {
+      await guardDb.runInTransaction(async () => {
+        await guardDb.insertBp({
+          systolic: 120, diastolic: 80, heartRate: null, measureTime: ts(2026, 10, 11, 8, 0),
+          period: Period.MORNING, note: null
+        });
+      });
+    } catch (err) {
+      nestedRejected = true;
+    }
+    eq(nestedRejected, true, '事务内不传 TxSession 的写入被拒绝（不再自我死锁挂住）');
+
+    let nestedTxRejected: boolean = false;
+    try {
+      await guardDb.runInTransaction(async () => {
+        await guardDb.runInTransaction(async () => {});
+      });
+    } catch (err) {
+      nestedTxRejected = true;
+    }
+    eq(nestedTxRejected, true, '嵌套事务被拒绝（要求把 TxSession 传下去）');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;
@@ -2395,17 +2425,32 @@ async function reviewScenarios(): Promise<void> {
         throw new Error('unused');
       }
     });
+    let savedMedId: number = 0;
+    let savedPlanId: number = 0;
+    let savedSlots: string = '';
+    let savedMedActive: boolean = false;
     const result = await db.saveMedicationAndPlan({
       medicationId: 5,
       medication: { name: '测试药5', dosage: '2片', note: null },
       plan: { medicationId: 5, timeSlots: ['08:00'], startDate: '2026-10-01', endDate: null },
       regenerateFrom: 0,
       preGenDays: 7
-    }, async (tx: TxSession, medicationId: number) => 3);
+    }, async (tx: TxSession, saved: SavedMedicationPlan) => {
+      // 真机发现（事务内读不到未提交写入）之后的新契约：回调直接拿到**已写入**的对象
+      savedMedId = saved.medication.id;
+      savedPlanId = saved.plan.id;
+      savedSlots = saved.plan.timeSlots.join(',');
+      savedMedActive = saved.medication.isActive;
+      return 3;
+    });
     eq(begins, 1, 'R07 保存药品+计划只开一个事务');
     eq(commits, 1, 'R07 提交一次');
     eq(result.medicationId, 5, 'R07 既有药品保存后仍返回同一 id');
     eq(result.generatedPending, 3, 'R07 生成结果原样带回');
+    eq(savedMedId, 5, 'R07 回调拿到已写药品 id（无需回库查询）');
+    eq(savedMedActive, true, 'R07 回调拿到的是已启用状态（事务内查不到未提交写入）');
+    eq(savedSlots, '08:00', 'R07 回调拿到已写计划的时点');
+    ok(savedPlanId > 0, 'R07 回调拿到已写计划 id');
     let reactivated = false;
     for (const u of updates) {
       if (u['is_active'] === 1 && u['name'] === '测试药5') {

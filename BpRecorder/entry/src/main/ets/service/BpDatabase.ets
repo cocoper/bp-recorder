@@ -111,6 +111,18 @@ export interface SaveMedicationPlanCommand {
   preGenDays: number;
 }
 
+/**
+ * 保存后**已写入**的档案与计划快照（审查 R07 加固 · 真机联调发现）。
+ *
+ * 平台事实：在本应用实测中，事务内用 `store.query` **读不到本事务尚未提交的写入**
+ * （表现为刚插入的计划查不到、刚复活的药品仍是停用）——因此生成待服的调用方
+ * 不能再"回库自查"，必须直接使用这里传下去的已写对象。
+ */
+export interface SavedMedicationPlan {
+  medication: Medication;
+  plan: MedPlan;
+}
+
 export interface SaveMedicationPlanResult {
   medicationId: number;
   planId: number;
@@ -140,6 +152,12 @@ export class BpDatabase implements BackupTarget {
   private initPromise: Promise<void> | null = null;
   /** 写操作串行队列（审查 R06.1）：单步写与事务写共用同一条队列，杜绝独立写被卷进别人的事务 */
   private txQueue: Promise<void> = Promise.resolve();
+  /**
+   * 事务深度（真机联调发现）：在事务内做「不传 TxSession 的写入」会去排那个正被自己持有的队，
+   * 造成**自我死锁**（表现为页面/测试无响应，5 秒超时）。这里显式检测并报错，
+   * 把"静默挂住"变成"立即失败并说明怎么改"（审查 R06 契约的加固）。
+   */
+  private txDepth: number = 0;
   /** 实际已连接的库名（'' = 未连接）。任何「换库名」请求都以此为准做拒绝判断。 */
   private openedStoreName: string = '';
   /** 是否由 createIsolated 创建的测试实例（生产单例为 false）。 */
@@ -414,6 +432,10 @@ export class BpDatabase implements BackupTarget {
     if (tx !== undefined) {
       return op(tx.store);
     }
+    if (this.txDepth > 0) {
+      throw new AppError(-1,
+        '在事务内禁止不传 TxSession 的写入（会自我死锁）：请把 tx 参数传给下游领域命令');
+    }
     return this.runExclusive<T>(() => op(this.requireStore()));
   }
 
@@ -422,6 +444,10 @@ export class BpDatabase implements BackupTarget {
    * 嵌套调用**不**猜上下文：调用方要么把 tx 往下传（走领域命令），要么就是一次独立事务（排队）。
    */
   async runInTransaction(work: (tx: TxSession) => Promise<void>): Promise<void> {
+    if (this.txDepth > 0) {
+      throw new AppError(-1,
+        '不支持嵌套事务：请把现有 TxSession 传给下游领域命令，而不是再开一个事务');
+    }
     await this.runExclusive(async () => {
       const store: relationalStore.RdbStore = this.requireStore();
       try {
@@ -433,6 +459,7 @@ export class BpDatabase implements BackupTarget {
         throw new AppError(be.code, be.message);
       }
       const tx: TxSession = { store };
+      this.txDepth++;
       try {
         await work(tx);
         await store.commit();
@@ -447,6 +474,8 @@ export class BpDatabase implements BackupTarget {
           Logger.error(TAG, `rollback failed: code=${re.code}, message=${re.message}`);
         }
         throw new AppError(be.code, be.message);
+      } finally {
+        this.txDepth--;
       }
     });
   }
@@ -1358,7 +1387,7 @@ export class BpDatabase implements BackupTarget {
    * 提醒的登记**不在**事务内：DB 无共同事务边界，提交后再单独协调（报告规则 6）。
    */
   async saveMedicationAndPlan(cmd: SaveMedicationPlanCommand,
-    generate: (tx: TxSession, medicationId: number) => Promise<number>): Promise<SaveMedicationPlanResult> {
+    generate: (tx: TxSession, saved: SavedMedicationPlan) => Promise<number>): Promise<SaveMedicationPlanResult> {
     let medicationId: number = 0;
     let planId: number = 0;
     let cleared: number = 0;
@@ -1377,7 +1406,31 @@ export class BpDatabase implements BackupTarget {
       };
       planId = await this.upsertPlanIn(tx, plan);
       cleared = await this.deleteFuturePendingLogs(medicationId, cmd.regenerateFrom, tx);
-      generated = await generate(tx, medicationId);
+      // 传下去的是**刚刚写入**的对象（含真实 id 与有效区间），调用方据此生成待服，
+      // 不要回库查询：事务内读不到未提交写入（本文件 SavedMedicationPlan 注释里记录了实测现象）
+      const savedNow: number = DateUtils.now();
+      const savedMed: Medication = {
+        id: medicationId,
+        name: cmd.medication.name,
+        dosage: cmd.medication.dosage,
+        note: cmd.medication.note,
+        isActive: true,
+        createdAt: savedNow,
+        updatedAt: savedNow
+      };
+      const savedPlan: MedPlan = {
+        id: planId,
+        medicationId: medicationId,
+        timeSlots: cmd.plan.timeSlots.slice(),
+        startDate: cmd.plan.startDate,
+        endDate: cmd.plan.endDate,
+        isActive: true,
+        createdAt: savedNow,
+        updatedAt: savedNow,
+        effectiveFrom: BpDatabase.planEffectiveFrom(cmd.plan.startDate, savedNow),
+        effectiveTo: BpDatabase.planEffectiveTo(cmd.plan.endDate)
+      };
+      generated = await generate(tx, { medication: savedMed, plan: savedPlan });
     });
     return {
       medicationId: medicationId,

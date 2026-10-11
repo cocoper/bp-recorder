@@ -133,13 +133,17 @@ export default function medServiceTest() {
       const meds: Medication[] = [med(1, '缬沙坦', true)];
       const drafts = MedService.pendingDrafts([plan(1, 1, ['07:30', '18:00'], '2026-10-01', null, true)],
         meds, ts(2026, 10, 6, 12, 0), 7);
-      expect(drafts.length).assertEqual(14);
-      expect(drafts[0].scheduledTime).assertEqual(ts(2026, 10, 6, 7, 30));
-      expect(drafts[13].scheduledTime).assertEqual(ts(2026, 10, 12, 18, 0));
+      // R01.2：生效下界 = max(保存时刻, startDate) —— 12:00 保存时当天 07:30 已过去，不生成，
+      // 所以是 6 天 × 2 个时点 + 当天 18:00 = 13 条（业务含义仍是「滚动 7 天窗口」）
+      expect(drafts.length).assertEqual(13);
+      expect(drafts[0].scheduledTime).assertEqual(ts(2026, 10, 6, 18, 0));
+      expect(drafts[12].scheduledTime).assertEqual(ts(2026, 10, 12, 18, 0));
 
+      // R01.2：12:00 生成时当天 08:00 已过去 → 只生成 10-02、10-03 两天（业务含义仍是「按 endDate 截断」）
       const truncated = MedService.pendingDrafts([plan(1, 1, ['08:00'], '2026-10-01', '2026-10-03', true)],
         meds, ts(2026, 10, 1, 12, 0), 7);
-      expect(truncated.length).assertEqual(3);
+      expect(truncated.length).assertEqual(2);
+      expect(truncated[truncated.length - 1].scheduledTime).assertEqual(ts(2026, 10, 3, 8, 0));
     });
 
     it('merge_same_slot', 0, () => {

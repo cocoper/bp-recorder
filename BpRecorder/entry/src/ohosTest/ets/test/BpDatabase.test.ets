@@ -3,7 +3,7 @@ import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { BpDatabase, SaveMedicationPlanResult, TxSession } from '../../../main/ets/service/BpDatabase';
+import { BpDatabase, SaveMedicationPlanResult, TxSession , SavedMedicationPlan } from '../../../main/ets/service/BpDatabase';
 import { MedService } from '../../../main/ets/service/MedService';
 import { Medication, MedLog, MedLogDraft, MedPlan, MedPlanDraft } from '../../../main/ets/model/Med';
 import { BpRecord, BpRecordDraft } from '../../../main/ets/model/BpRecord';
@@ -169,7 +169,9 @@ export default function bpDatabaseTest() {
       expect(plans[0].timeSlots.length).assertEqual(2);
 
       const today: number = DateUtils.now();
-      const drafts: MedLogDraft[] = MedService.pendingDrafts(plans, await requireDb().queryMedications(), today, 7);
+      // 生成起点用「当天 0 点」：R01.2 起 pendingDrafts 的生效下界是 max(保存时刻, startDate)，
+      // 直接传 now 会把今天已过去的时点跳过（那正是新契约要的行为）
+      const drafts: MedLogDraft[] = MedService.pendingDrafts(plans, await requireDb().queryMedications(), DateUtils.startOfDay(today), 7);
       const inserted: number = await requireDb().insertMissingLogs(drafts);
       expect(inserted).assertEqual(drafts.length);
 
@@ -199,7 +201,10 @@ export default function bpDatabaseTest() {
       });
       const plans: MedPlan[] = await requireDb().queryActivePlans();
       const meds: Medication[] = await requireDb().queryMedications();
-      await requireDb().insertMissingLogs(MedService.pendingDrafts(plans, meds, DateUtils.now(), 4));
+      // 生成起点用「当天 0 点」：R01.2 起生效下界是 max(保存时刻, startDate)，
+      // 传 now 会让今天已过去的 07:30 不生成，这条用例就失去了「有到期义务可标记」的前提
+      await requireDb().insertMissingLogs(
+        MedService.pendingDrafts(plans, meds, DateUtils.startOfDay(DateUtils.now()), 4));
 
       const now: number = DateUtils.now();
       const marked: number = await requireDb().markMissed(now);
@@ -220,8 +225,10 @@ export default function bpDatabaseTest() {
       let threw: boolean = false;
       try {
         // 事务中先成功插入一条，再抛错 → 整批回滚，不产生半批数据（FR-6.8）
-        await requireDb().runInTransaction(async () => {
-          await requireDb().insertBp(draft(130, 85, null, DateUtils.now()));
+        // 审查 R06 契约（真机联调发现）：事务内的写入必须把 TxSession 传下去，
+        // 否则会去排自己持有的队列 → 自我死锁（现在会显式报错而不是挂住）
+        await requireDb().runInTransaction(async (tx) => {
+          await requireDb().insertBp(draft(130, 85, null, DateUtils.now()), tx);
           throw new Error('simulated failure');
         });
       } catch (err) {
@@ -333,10 +340,11 @@ export default function bpDatabaseTest() {
         plan: { medicationId: medId, timeSlots: ['09:00'], startDate: DateUtils.formatDate(now), endDate: null },
         regenerateFrom: now,
         preGenDays: MedLimits.PRE_GEN_DAYS
-      }, async (tx: TxSession, id: number): Promise<number> => {
-        const plans: MedPlan[] = await requireDb().queryActivePlans();
-        const meds: Medication[] = await requireDb().queryMedications();
-        return requireDb().insertMissingLogs(MedService.pendingDrafts(plans, meds, now, MedLimits.PRE_GEN_DAYS), tx);
+      }, async (tx: TxSession, saved: SavedMedicationPlan): Promise<number> => {
+        // 真机实测：事务内读不到未提交写入（plans=0 / med active=false），
+        // 所以生成待服必须用命令传下来的已写对象，而不是回库查询
+        return requireDb().insertMissingLogs(
+          MedService.pendingDrafts([saved.plan], [saved.medication], now, MedLimits.PRE_GEN_DAYS), tx);
       });
 
       expect(result.medicationId).assertEqual(medId);
