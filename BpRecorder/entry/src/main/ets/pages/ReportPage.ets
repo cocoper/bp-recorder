@@ -207,12 +207,20 @@ struct ReportPage {
       this.toast($r('app.string.report_not_ready'));
       return;
     }
-    if (!this.withinCaptureBudget()) {
-      return;
-    }
     try {
+      const plan: CapturePlan = this.capturePlan();
       const fileName: string = FileService.stampName('bp_report_', '.png', DateUtils.now());
       const title: string = this.report === null ? '' : this.report.title;
+      if (plan.split) {
+        // 审查 R15.4：长报告切多张后一次性分享（带序号），不再只给第一张或直接拒绝
+        const slices: CaptureSlice[] = ShareService.planSlices(plan.heightPx, ShareService.CAPTURE_MAX_HEIGHT_PX);
+        const png: ArrayBuffer = await this.captureData();
+        const parts: ArrayBuffer[] = await ShareService.slicePng(png, plan.widthPx, slices);
+        const shown: number = await ShareService.shareImages(this.context(), parts,
+          fileName.substring(0, fileName.length - 4), title);
+        this.toast($r('app.string.report_multi_images', shown));
+        return;
+      }
       await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
         ShareService.shareImage(this.context(), pixelMap, fileName, title));
     } catch (err) {

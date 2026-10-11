@@ -319,8 +319,10 @@ export namespace photoAccessHelper {
     dts: `
 export namespace systemShare {
   export interface ShareData { utd: string; uri?: string; title?: string; description?: string }
+  export interface SharedRecord { utd: string; uri?: string; content?: string; title?: string }
   export class SharedData {
     constructor(data: ShareData | Array<ShareData>);
+    addRecord(record: SharedRecord): void;
   }
   export enum SelectionMode { SINGLE = 0, BATCH = 1 }
   export enum SharePreviewMode { DEFAULT = 0, DETAIL = 1 }

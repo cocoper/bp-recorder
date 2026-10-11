@@ -195,6 +195,41 @@ export class ShareService {
     Logger.info(TAG, 'share panel opened');
   }
 
+  /**
+   * 多张 PNG 一次性分享（审查 R15.4：长报告分多图后仍要能一次分享完）。
+   * 每张写成带序号的临时文件，再用 SharedData.addRecord 追加成一条分享记录 ——
+   * 接收端看到的是按序号排列的多张图，而不是只有第一张。
+   */
+  static async shareImages(context: common.UIAbilityContext, pngs: ArrayBuffer[],
+    baseName: string, title: string): Promise<number> {
+    if (pngs.length === 0) {
+      return 0;
+    }
+    const total: number = pngs.length;
+    const uris: string[] = [];
+    for (let i = 0; i < total; i++) {
+      const name: string = total === 1
+        ? baseName
+        : `${baseName}_${i + 1}of${total}.png`;
+      uris.push(await FileService.writeTempImage(context, name, pngs[i]));
+    }
+    const data: systemShare.SharedData = new systemShare.SharedData({
+      utd: utd.UniformDataType.PNG,
+      uri: uris[0],
+      title: title
+    });
+    for (let i = 1; i < uris.length; i++) {
+      data.addRecord({ utd: utd.UniformDataType.PNG, uri: uris[i], title: title });
+    }
+    const controller: systemShare.ShareController = new systemShare.ShareController(data);
+    await controller.show(context, {
+      selectionMode: systemShare.SelectionMode.SINGLE,
+      previewMode: systemShare.SharePreviewMode.DETAIL
+    });
+    Logger.info(TAG, `share panel opened with ${uris.length} image(s)`);
+    return uris.length;
+  }
+
   /** 调起系统打印界面（用户可「另存为 PDF」，FR-10.3） */
   static async printImage(context: common.UIAbilityContext, pixelMap: image.PixelMap,
     fileName: string): Promise<void> {
