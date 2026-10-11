@@ -16,6 +16,7 @@ import { BackupService } from '../service/BackupService';
 import { BackupFile } from '../model/Backup';
 import { FileService } from '../service/FileService';
 import { ReminderService } from '../service/ReminderService';
+import { LifecycleResult, MedLifecycleService } from '../service/MedLifecycleService';
 import { ClearDataDialog } from '../components/ClearDataDialog';
 import { SettingRow } from '../components/SettingRow';
 
@@ -231,8 +232,13 @@ struct SettingsPage {
       const overwritten: number = result.overwritten.bp + result.overwritten.meds
         + result.overwritten.plans + result.overwritten.logs;
       Logger.info(TAG, `restore done: added=${added}, overwritten=${overwritten}, ignored=${result.ignored}`);
-      // 恢复完成后再统一协调系统提醒（恢复过程中不发布任何提醒）
-      await ReminderService.syncFromDatabase(context, db, VocabFactory.reminder(context), DateUtils.now());
+      // 审查 R10.4：提交完成后**统一补齐 + 调度** —— 恢复过程本身不生成 pending、不发提醒。
+      // 先补齐应服记录（滚动补齐 → 派生漏服 → 停用到期计划），再按最新全量生效计划协调提醒；
+      // 顺序不能颠倒：提醒要按补齐后的真实义务集合来登记。
+      const now: number = DateUtils.now();
+      const lifecycle: LifecycleResult = await MedLifecycleService.run(db, now);
+      Logger.info(TAG, `post-restore lifecycle: backfilled=${lifecycle.backfilled}, missed=${lifecycle.markedMissed}, deactivated=${lifecycle.deactivatedPlans}`);
+      await ReminderService.syncFromDatabase(context, db, VocabFactory.reminder(context), now);
       this.toast($r('app.string.toast_restore_done', added, overwritten, result.ignored));
     } catch (err) {
       const e = err as BusinessError;
