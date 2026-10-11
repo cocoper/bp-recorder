@@ -3,6 +3,8 @@ import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { Logger } from '../common/Logger';
+import { DateUtils } from '../common/DateUtils';
+import { ShareConst } from '../common/Constants';
 
 const TAG: string = 'FileService';
 
@@ -149,7 +151,91 @@ export class FileService {
   }
 
   /** 写入二进制到 cacheDir，返回可分享的 file URI */
+  /**
+   * 临时图清理策略（审查 R15.2，纯函数，便于离线回归）：
+   * ① 超过 maxAgeMs 的一律删；② 剩余总量超过 maxBytes 时按**最旧优先**删，
+   * 但**近 freshMs 内创建的文件不动** —— 系统分享/打印可能仍在读取它。
+   */
+  static planPrune(entries: TempFileEntry[], maxAgeMs: number, maxBytes: number,
+    now: number, freshMs: number): string[] {
+    const doomed: string[] = [];
+    const keep: TempFileEntry[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e: TempFileEntry = entries[i];
+      if (now - e.mtime > maxAgeMs) {
+        doomed.push(e.path);
+      } else {
+        keep.push(e);
+      }
+    }
+    let total: number = 0;
+    for (let i = 0; i < keep.length; i++) {
+      total += keep[i].size;
+    }
+    if (total <= maxBytes) {
+      return doomed;
+    }
+    keep.sort((a: TempFileEntry, b: TempFileEntry) => a.mtime - b.mtime);
+    for (let i = 0; i < keep.length && total > maxBytes; i++) {
+      const e: TempFileEntry = keep[i];
+      if (now - e.mtime < freshMs) {
+        continue;                      // 新文件可能正被系统读取
+      }
+      doomed.push(e.path);
+      total -= e.size;
+    }
+    return doomed;
+  }
+
+  /**
+   * 清理本应用在 cacheDir 里生成的临时图（审查 R15.2）：保留不超过 24 小时、总量不超过 50 MiB。
+   * 只处理本应用前缀的缓存文件，**不触碰外部相册或用户保存的文件**。
+   */
+  static async pruneTempImages(context: common.UIAbilityContext, prefix: string,
+    now: number): Promise<number> {
+    const dir: string = context.cacheDir;
+    let names: string[] = [];
+    try {
+      names = fileIo.listFileSync(dir);
+    } catch (err) {
+      const e = err as BusinessError;
+      Logger.warn(TAG, `list cacheDir failed: code=${e.code}, message=${e.message}`);
+      return 0;
+    }
+    const entries: TempFileEntry[] = [];
+    for (let i = 0; i < names.length; i++) {
+      const name: string = names[i];
+      if (name.indexOf(prefix) !== 0) {
+        continue;                        // 只清理本应用前缀
+      }
+      try {
+        const st: fileIo.Stat = fileIo.statSync(`${dir}/${name}`);
+        entries.push({ path: `${dir}/${name}`, size: st.size, mtime: st.mtime * 1000 });
+      } catch (err) {
+        continue;
+      }
+    }
+    const doomed: string[] = FileService.planPrune(entries, ShareConst.TEMP_IMAGE_MAX_AGE_MS,
+      ShareConst.TEMP_IMAGE_MAX_BYTES, now, ShareConst.TEMP_IMAGE_FRESH_MS);
+    let deleted: number = 0;
+    for (let i = 0; i < doomed.length; i++) {
+      try {
+        fileIo.unlinkSync(doomed[i]);
+        deleted++;
+      } catch (err) {
+        const e = err as BusinessError;
+        Logger.warn(TAG, `unlink temp image failed: code=${e.code}`);
+      }
+    }
+    if (deleted > 0) {
+      Logger.info(TAG, `pruned temp images: ${deleted}`);
+    }
+    return deleted;
+  }
+
   static async writeTempImage(context: common.UIAbilityContext, fileName: string, data: ArrayBuffer): Promise<string> {
+    // 审查 R15.2：写入前先按配额清理旧临时图（不删新鲜的，避免打断系统分享/打印读取）
+    await FileService.pruneTempImages(context, ShareConst.TEMP_IMAGE_PREFIX, DateUtils.now());
     const path: string = `${context.cacheDir}/${fileName}`;
     const file: fileIo.File = fileIo.openSync(path,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
@@ -179,4 +265,12 @@ export class FileService {
       return raw;
     }
   }
+}
+
+/** 临时图条目（审查 R15.2：清理策略的输入） */
+export interface TempFileEntry {
+  path: string;
+  size: number;
+  /** 修改时间（毫秒） */
+  mtime: number;
 }

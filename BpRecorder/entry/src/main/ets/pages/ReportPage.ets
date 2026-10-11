@@ -149,8 +149,8 @@ struct ReportPage {
   }
 
   private async captureData(): Promise<ArrayBuffer> {
-    const pixelMap = await ShareService.snapshot(CAPTURE_ID);
-    return ShareService.packPng(pixelMap);
+    // 审查 R15.1：快照的 PixelMap 由创建者释放
+    return ShareService.withSnapshot(CAPTURE_ID, (pixelMap) => ShareService.packPng(pixelMap));
   }
 
   /**
@@ -167,10 +167,10 @@ struct ReportPage {
       return;
     }
     try {
-      const pixelMap = await ShareService.snapshot(CAPTURE_ID);
       const fileName: string = FileService.stampName('bp_report_', '.png', DateUtils.now());
       const title: string = this.report === null ? '' : this.report.title;
-      await ShareService.shareImage(this.context(), pixelMap, fileName, title);
+      await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
+        ShareService.shareImage(this.context(), pixelMap, fileName, title));
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `share report failed: ${ShareService.describeError(e)}`);
@@ -184,9 +184,9 @@ struct ReportPage {
       return;
     }
     try {
-      const pixelMap = await ShareService.snapshot(CAPTURE_ID);
-      await ShareService.printImage(this.context(), pixelMap,
-        FileService.stampName('bp_report_', '.png', DateUtils.now()));
+      await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
+        ShareService.printImage(this.context(), pixelMap,
+          FileService.stampName('bp_report_', '.png', DateUtils.now())));
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `print report failed: ${ShareService.describeError(e)}`);

@@ -24,6 +24,8 @@ import { BackupTarget, BpDatabase, TxSession } from './src/service/BpDatabase';
 import { MedLifecycleService } from './src/service/MedLifecycleService';
 import { ReminderService } from './src/service/ReminderService';
 import { BackupService } from './src/service/BackupService';
+import { ShareService } from './src/service/ShareService';
+import { FileService, TempFileEntry } from './src/service/FileService';
 import { BackupBp, BackupFile, BackupLog, BackupMed, BackupPlan } from './src/model/Backup';
 import { ReminderVocab } from './src/common/Vocab';
 import { ReminderMode } from './src/model/Types';
@@ -1711,6 +1713,35 @@ async function reviewScenarios(): Promise<void> {
     // 带稳定 ID 的新版文件不受影响（同一文件里带 ID 应当照常处理）
     const uniqueMeds: Medication[] = [med(1, '缬沙坦')];
     eq(ImportService.ambiguousNames(uniqueMeds).size, 0, 'R10.5 唯一药名不产生歧义');
+  }
+
+  group('审查 R15（出图尺寸契约与临时文件配额）');
+  {
+    eq(ShareService.CAPTURE_WIDTH_PX, 1080, 'R15 出图宽度契约 = 1080px（与屏幕无关）');
+    eq(ShareService.captureWidthVp(3), 360, 'R15 3x 密度下 1080px 对应 360vp');
+    eq(ShareService.captureWidthVp(2), 540, 'R15 2x 密度下 1080px 对应 540vp');
+    const single = ShareService.planCapture(2000, 3);
+    eq(single.heightPx, 6000, 'R15 预估高度换算成像素');
+    eq(single.split, false, 'R15 6000px 单张即可');
+    const tall = ShareService.planCapture(4000, 3);
+    eq(tall.split, true, 'R15 超过 8192px 必须分页输出');
+    eq(tall.pages, 2, 'R15 12000px → 2 张');
+
+    const nowRef: number = ts(2026, 10, 11, 12, 0);
+    const dayMs: number = 24 * 60 * 60 * 1000;
+    const entries: TempFileEntry[] = [
+      { path: 'a', size: 10, mtime: nowRef - 2 * dayMs },
+      { path: 'b', size: 30 * 1024 * 1024, mtime: nowRef - 60 * 60 * 1000 },
+      { path: 'c', size: 30 * 1024 * 1024, mtime: nowRef - 2 * 60 * 60 * 1000 },
+      { path: 'd', size: 1024, mtime: nowRef - 60 * 1000 }
+    ];
+    const doomed: string[] = FileService.planPrune(entries, dayMs, 50 * 1024 * 1024, nowRef, 5 * 60 * 1000);
+    ok(doomed.indexOf('a') >= 0, 'R15 超 24 小时的临时图必删');
+    ok(doomed.indexOf('c') >= 0, 'R15 超量时按最旧优先删');
+    eq(doomed.indexOf('d'), -1, 'R15 新鲜文件不参与超量清理（系统可能仍在读取）');
+    eq(doomed.indexOf('b'), -1, 'R15 删到配额以内即停止');
+    eq(FileService.planPrune(entries, dayMs, 100 * 1024 * 1024, nowRef, 5 * 60 * 1000).length, 1,
+      'R15 未超量时只删过期的');
   }
 
   group('审查反例 R17（测试实例隔离）');

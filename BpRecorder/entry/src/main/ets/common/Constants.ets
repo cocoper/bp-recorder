@@ -163,6 +163,22 @@ export class PrefKeys {
 }
 
 /** 通知与提醒常量 */
+/** 出图与临时文件契约（审查 R15） */
+export class ShareConst {
+  /** 目标出图宽度（像素） */
+  static readonly CAPTURE_WIDTH_PX: number = 1080;
+  /** 单张位图最大像素高：超过必须分页输出 */
+  static readonly CAPTURE_MAX_HEIGHT_PX: number = 8192;
+  /** 本应用临时图文件名前缀（cacheDir 里只清理自己的） */
+  static readonly TEMP_IMAGE_PREFIX: string = 'bp_';
+  /** 临时图最长保留时间：24 小时 */
+  static readonly TEMP_IMAGE_MAX_AGE_MS: number = 24 * 60 * 60 * 1000;
+  /** 临时图总量上限：50 MiB */
+  static readonly TEMP_IMAGE_MAX_BYTES: number = 50 * 1024 * 1024;
+  /** 这个时长内创建的文件不参与「超量清理」：系统分享/打印可能还在读 */
+  static readonly TEMP_IMAGE_FRESH_MS: number = 5 * 60 * 1000;
+}
+
 export class ReminderConst {
   /** 通知渠道 id */
   static readonly SLOT_ID: string = 'bp_med_reminder';

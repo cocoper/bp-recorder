@@ -216,10 +216,12 @@ export namespace hilog {
 export namespace fileIo {
   export enum OpenMode { READ_ONLY = 0, WRITE_ONLY = 1, READ_WRITE = 2, CREATE = 64, TRUNC = 512 }
   export interface File { fd: number; path?: string; name?: string }
-  export interface Stat { size: number; isDirectory(): boolean; isFile(): boolean }
+  export interface Stat { size: number; mtime: number; isDirectory(): boolean; isFile(): boolean }
   export function openSync(path: string, mode?: number): File;
   export function open(path: string, mode?: number): Promise<File>;
   export function statSync(file: number | string): Stat;
+  export function listFileSync(path: string, options?: object): string[];
+  export function unlinkSync(path: string): void;
   export function readSync(fd: number, buffer: ArrayBuffer, options?: object): number;
   export function writeSync(fd: number, buffer: ArrayBuffer | string, options?: object): number;
   export function write(fd: number, buffer: ArrayBuffer | string): Promise<number>;
@@ -293,6 +295,9 @@ export namespace photoAccessHelper {
     createAsset(photoType: PhotoType, extension: string): Promise<string>;
   }
   export function getPhotoAccessHelper(context: object): PhotoAccessHelper;
+  export class MediaAssetChangeRequest {
+    static deleteAssets(context: object, uriList: Array<string>): Promise<void>;
+  }
 }
 `,
     js: `exports.photoAccessHelper = {};`

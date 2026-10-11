@@ -520,10 +520,10 @@ struct ChartPage {
       return;
     }
     try {
-      const pixelMap = await ShareService.snapshot(CAPTURE_ID);
       const fileName: string = FileService.stampName('bp_chart_', '.png', DateUtils.now());
       const title: string = ResUtils.text(this.context(), $r('app.string.share_chart_title'));
-      await ShareService.shareImage(this.context(), pixelMap, fileName, title);
+      await ShareService.withSnapshot(CAPTURE_ID, (pixelMap) =>
+        ShareService.shareImage(this.context(), pixelMap, fileName, title));
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `share chart failed: ${ShareService.describeError(e)}`);
@@ -668,8 +668,8 @@ struct ChartPage {
             return;
           }
           try {
-            const pixelMap = await ShareService.snapshot(CAPTURE_ID);
-            const data: ArrayBuffer = await ShareService.packPng(pixelMap);
+            const data: ArrayBuffer = await ShareService.withSnapshot(CAPTURE_ID,
+              (pixelMap) => ShareService.packPng(pixelMap));
             await ShareService.saveToAlbum(this.context(), data);
             this.toast($r('app.string.toast_saved_album'));
           } catch (err) {
