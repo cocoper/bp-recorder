@@ -1280,7 +1280,7 @@ async function reviewScenarios(): Promise<void> {
       'R01 回补上限：200 天未打开也只补 30 天 + 未来 7 天 = 38 条，不倒造多年漏服');
   }
 
-  group('审查反例 R02（归档/停用后按全量集合协调提醒）');
+  group('审查反例 R02/R05（提醒协调：全量集合、完整性与诚实失败）');
   {
     // 提醒代理 / 通知 / preferences 全部内存桩（与审查反例 repro.cjs 同款），不触碰设备与用户数据
     const agent = reminderAgentManager as unknown as Record<string, unknown>;
@@ -1347,6 +1347,59 @@ async function reviewScenarios(): Promise<void> {
     const none = { queryActivePlans: async () => [], queryMedications: async () => medsAB } as unknown as BpDatabase;
     await ReminderService.syncFromDatabase(ctx, none, vocab, now);
     eq(business().length, 0, 'R02 停用最后一药后才允许空集合');
+
+    // R05.1：一条发布失败后签名不得被缓存，下次协调必须补足
+    memory.delete(PrefKeys.REMINDER_SIG);
+    let failHour: number = 18;
+    agent['publishReminder'] = async (req: Record<string, unknown>) => {
+      if (req['hour'] === failHour) {
+        throw Object.assign(new Error('injected publish failure'), { code: 1700002 });
+      }
+      alarms.push(req);
+      return alarms.length;
+    };
+    await ReminderService.rebuildAll(ctx, [planA, planB], medsAB, vocab, now, false);
+    eq(business().length, 1, 'R05-a 部分失败：本轮只成功 1 条');
+    failHour = -1;
+    agent['publishReminder'] = async (req: Record<string, unknown>) => {
+      alarms.push(req);
+      return alarms.length;
+    };
+    await ReminderService.rebuildAll(ctx, [planA, planB], medsAB, vocab, now, false);
+    eq(business().length, 2, 'R05-a 平台恢复后下次协调补足缺失提醒');
+
+    // R05.4：不再静默截断（旧实现 for(i<20) 只发前 20 组）
+    const manyMeds: Medication[] = [];
+    const manyPlans: MedPlan[] = [];
+    for (let i = 0; i < 25; i++) {
+      manyMeds.push(med(100 + i, `药${i}`));
+      const hh: number = Math.floor(i / 2);
+      const mm: number = (i % 2) * 30;
+      const slot: string = `${hh < 10 ? '0' : ''}${hh}:${mm === 0 ? '00' : '30'}`;
+      manyPlans.push(plan(200 + i, 100 + i, [slot], '2026-10-01', null, true));
+    }
+    await ReminderService.rebuildAll(ctx, manyPlans, manyMeds, vocab, now, false);
+    eq(business().length, 25, 'R05 25 个时点全部尝试登记（旧实现静默截断到 20）');
+
+    // R05.2：取消旧提醒失败时必须终止本轮，不能追加出重复项
+    const beforeCancelFail: number = business().length;
+    agent['cancelAllReminders'] = async () => {
+      throw new Error('injected cancel failure');
+    };
+    await ReminderService.rebuildAll(ctx, [planA, planB], medsAB, vocab, now, true);
+    eq(business().length, beforeCancelFail, 'R05 取消失败时本轮不追加新提醒（避免重复项）');
+    agent['cancelAllReminders'] = async () => {
+      alarms.length = 0;
+    };
+
+    // R05.5：通知发送失败不得返回成功、不得写「今日已发送」
+    notif['publish'] = async () => {
+      throw new Error('injected notification failure');
+    };
+    const returned: boolean = await ReminderService.notifyCatchUpOncePerDay(
+      ctx as unknown as common.Context, 1, 't', 'c', 42);
+    eq(returned, false, 'R05-b 通知失败必须返回 false');
+    eq(memory.has(PrefKeys.CATCHUP_DATE), false, 'R05-b 通知失败不得写今日已发送标记');
   }
 
   group('审查反例 R17（测试实例隔离）');

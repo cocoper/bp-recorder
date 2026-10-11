@@ -242,7 +242,31 @@ export class ReminderService {
     return capability;
   }
 
+  /** 提醒协调串行队列（审查 R05.3）：两个 cancelAll→publish 流程不得交错执行 */
+  private static syncQueue: Promise<void> = Promise.resolve();
+
+  private static async runExclusive<T>(work: () => Promise<T>): Promise<T> {
+    const previous: Promise<void> = ReminderService.syncQueue;
+    let release: () => void = () => {};
+    ReminderService.syncQueue = new Promise<void>((resolve: () => void) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await work();
+    } finally {
+      release();
+    }
+  }
+
+  /** 协调入口：所有调用都排队执行（内部实现见 rebuildAllLocked） */
   static async rebuildAll(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
+    vocab: ReminderVocab, todayTs: number, force: boolean = false): Promise<ReminderCapability> {
+    return ReminderService.runExclusive<ReminderCapability>(() =>
+      ReminderService.rebuildAllLocked(context, plans, meds, vocab, todayTs, force));
+  }
+
+  private static async rebuildAllLocked(context: common.UIAbilityContext, plans: MedPlan[], meds: Medication[],
     vocab: ReminderVocab, todayTs: number, force: boolean = false): Promise<ReminderCapability> {
     let capability: ReminderCapability = await ReminderService.probe(context, force, vocab);
 
@@ -271,15 +295,21 @@ export class ReminderService {
       await reminderAgentManager.cancelAllReminders();
     } catch (err) {
       const e = err as BusinessError;
-      Logger.warn(TAG, `cancelAllReminders failed: code=${e.code}, message=${e.message}`);
+      // 审查 R05.2：取消旧提醒失败时**不能**继续追加新提醒（会留下重复项，且旧项无人报告）。
+      // 这一轮就此终止，也不写签名 —— 下次协调会重试。
+      Logger.error(TAG, `cancelAllReminders failed, abort this round: code=${e.code}, message=${e.message}`);
+      return capability;
     }
 
     const slots: SlotInstance[] = MedService.planSlotsOf(todayTs, plans, meds);
     const groups: SlotGroup[] = MedService.groupBySlot(slots);
     const pkg: string = ReminderService.bundleName(context);
 
+    // 审查 R05.4：删掉 i<20 的静默截断 —— 期望集合里的每一条都要尝试登记，
+    // 失败的要如实计数并上报（不能用「前 20 条成功」冒充全部完成）。
     let published: number = 0;
-    for (let i = 0; i < groups.length && i < 20; i++) {
+    let failed: number = 0;
+    for (let i = 0; i < groups.length; i++) {
       const group: SlotGroup = groups[i];
       const minutes: number = DateUtils.minutesOfDay(group.scheduledTime);
       const request: reminderAgentManager.ReminderRequestAlarm = {
@@ -310,13 +340,18 @@ export class ReminderService {
         published++;
       } catch (err) {
         const e = err as BusinessError;
-        Logger.error(TAG, `publish slot reminder failed: code=${e.code}, message=${e.message}`);
+        failed++;
+        Logger.error(TAG, `publish slot reminder failed: code=${e.code}, message=${e.message}, slot=${group.scheduledTime}`);
       }
     }
     // 只有「确实发布成功」或「本就没有需要提醒的时点」才记签名：
     // 否则下次切回前台会因签名相同而跳过重建，提醒永远补不回来（v1.14 修复）
-    if (published > 0 || groups.length === 0) {
+    // 审查 R05.1：只有**全部成功**（或本就没有需要提醒的时点）才写签名。
+    // 过去是 published>0 就写，于是「只成功了一部分」也算完成，缺失的那条再也不补。
+    if (failed === 0 || groups.length === 0) {
       ReminderService.saveSignature(context, signature);
+    } else {
+      Logger.warn(TAG, `reminder sync incomplete: published=${published}, failed=${failed}, signature not cached`);
     }
     // 真实发布成功却与探测结论不符：以实际结果为准修回 AGENT，避免把可用能力一直显示成不可用
     if (published > 0 && capability.mode !== ReminderMode.AGENT) {
@@ -407,7 +442,7 @@ export class ReminderService {
    * `NotificationRequest.deliveryTime` 是系统落库时自动生成的时间戳，
    * 不是可供应用预约的发送时间。因此到点唤醒只能依赖代理提醒。
    */
-  static async notifyText(title: string, text: string, notificationId: number): Promise<void> {
+  static async notifyText(title: string, text: string, notificationId: number): Promise<boolean> {
     const request: notificationManager.NotificationRequest = {
       id: notificationId,
       content: {
@@ -418,13 +453,11 @@ export class ReminderService {
         }
       }
     };
-    try {
-      await notificationManager.publish(request);
-      Logger.info(TAG, `local notification published: id=${notificationId}`);
-    } catch (err) {
-      const e = err as BusinessError;
-      Logger.warn(TAG, `publish notification failed: code=${e.code}, message=${e.message}`);
-    }
+    // 审查 R05.5：发送失败必须让调用方看见（过去这里吞掉异常，结果「今日已发送」照样被写上，
+    // 当天的补发通知再也不会重试）。
+    await notificationManager.publish(request);
+    Logger.info(TAG, `local notification published: id=${notificationId}`);
+    return true;
   }
 
   /**
@@ -451,7 +484,8 @@ export class ReminderService {
       }
       await ReminderService.notifyText(title, text, notificationId);
       store.putSync(PrefKeys.CATCHUP_DATE, today);
-      store.flush();
+      // 审查 R05.5：Preferences 的 flush 是异步的，同步 try/catch 捕不到它的拒绝，必须 await
+      await store.flush();
       return true;
     } catch (err) {
       const e = err as BusinessError;
