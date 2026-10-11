@@ -221,7 +221,8 @@ export class FileService {
    * 只处理本应用前缀的缓存文件，**不触碰外部相册或用户保存的文件**。
    */
   static async pruneTempImages(context: common.UIAbilityContext, prefix: string,
-    now: number): Promise<number> {
+    now: number, maxAgeMs: number = ShareConst.TEMP_IMAGE_MAX_AGE_MS,
+    maxBytes: number = ShareConst.TEMP_IMAGE_MAX_BYTES): Promise<number> {
     const dir: string = context.cacheDir;
     let names: string[] = [];
     try {
@@ -244,8 +245,8 @@ export class FileService {
         continue;
       }
     }
-    const doomed: string[] = FileService.planPrune(entries, ShareConst.TEMP_IMAGE_MAX_AGE_MS,
-      ShareConst.TEMP_IMAGE_MAX_BYTES, now, ShareConst.TEMP_IMAGE_FRESH_MS);
+    const doomed: string[] = FileService.planPrune(entries, maxAgeMs, maxBytes, now,
+      ShareConst.TEMP_IMAGE_FRESH_MS);
     let deleted: number = 0;
     for (let i = 0; i < doomed.length; i++) {
       try {

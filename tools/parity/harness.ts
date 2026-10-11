@@ -2129,6 +2129,105 @@ async function reviewScenarios(): Promise<void> {
     eq(planUpserts[0].endDate, null, '提交侧：长期计划 endDate 保持 null');
   }
 
+  group('全链路：建计划 → 次日 → 第 8 天 → 打卡 → 改时点 → 停药 → 导出恢复 → 历史报告');
+  {
+    const chainMed: Medication[] = [med(1, '链路药')];
+    const day1 = ts(2026, 10, 1, 0, 0);
+    // ① 首次建计划：07:15 每日一次
+    const planV1: MedPlan = {
+      id: 501, medicationId: 1, timeSlots: ['07:15'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: day1, updatedAt: day1,
+      effectiveFrom: day1, effectiveTo: null
+    };
+    const drafts1: MedLogDraft[] = MedService.pendingDrafts([planV1], chainMed, day1, 7);
+    eq(drafts1.length, 7, '链路①首次建计划预生成 7 天应服记录');
+
+    // ② 次日：仍应只有已生成的那些（不重复造行）
+    const day2 = ts(2026, 10, 2, 0, 0);
+    const wantedDay2: MedLogDraft[] = MedLifecycleService.obligations([planV1], chainMed, day2);
+    const existingDay2: MedLog[] = [];
+    for (const d of drafts1) {
+      existingDay2.push({
+        id: existingDay2.length + 1, medicationId: d.medicationId, medName: d.medName, dosage: d.dosage,
+        scheduledTime: d.scheduledTime, takenTime: null, status: MedLogStatus.PENDING,
+        note: null, createdAt: day1, updatedAt: day1, planId: d.planId
+      });
+    }
+    const newOnDay2: MedLogDraft[] = MedLifecycleService.missingOf(existingDay2, wantedDay2);
+    let reRequested: number = 0;
+    for (const d of newOnDay2) {
+      if (d.scheduledTime <= ts(2026, 10, 7, 23, 59)) {
+        reRequested++;   // 已生成过的日子又被索要 = 真正的重复造行
+      }
+    }
+    eq(reRequested, 0, '链路②次日不会重复索要已生成的日子（幂等）');
+    eq(newOnDay2.length, 2, '链路②只多出滚动窗口推进的 2 天（10-08/10-09）');
+
+    // ③ 第 8 天：滚动补齐必须补出新的应服记录（老实现到这里就断了）
+    const day8 = ts(2026, 10, 8, 12, 0);
+    const wantedDay8: MedLogDraft[] = MedLifecycleService.obligations([planV1], chainMed, day8);
+    ok(wantedDay8.length > wantedDay2.length, '链路③第 8 天仍有新增义务（不会停在第 7 天）');
+    const addedOnDay8: MedLogDraft[] = MedLifecycleService.missingOf(existingDay2, wantedDay8);
+    ok(addedOnDay8.length >= 1, '链路③第 8 天补齐出至少 1 条新应服记录');
+
+    // ④ 打卡：把第 2 天的记录标记为已服，依从率应体现出来
+    const takenLogs: MedLog[] = existingDay2.slice();
+    takenLogs[1] = {
+      id: 2, medicationId: 1, medName: '链路药', dosage: '1片',
+      scheduledTime: ts(2026, 10, 2, 7, 15), takenTime: ts(2026, 10, 2, 7, 20),
+      status: MedLogStatus.TAKEN, note: null, createdAt: day1, updatedAt: day2, planId: 501
+    };
+    const adherence = MedService.adherence(takenLogs, day8);
+    ok(adherence.taken >= 1, '链路④打卡后依从率记入已服');
+
+    // ⑤ 改时点：新版本从保存时刻起生效，旧版本有效区间在停用时刻收口
+    const editMoment = ts(2026, 10, 8, 9, 0);
+    const planV1Closed: MedPlan = {
+      id: 501, medicationId: 1, timeSlots: ['07:15'], startDate: '2026-10-01', endDate: null,
+      isActive: false, createdAt: day1, updatedAt: editMoment,
+      effectiveFrom: day1, effectiveTo: editMoment
+    };
+    const planV2: MedPlan = {
+      id: 502, medicationId: 1, timeSlots: ['09:00'], startDate: '2026-10-01', endDate: null,
+      isActive: true, createdAt: editMoment, updatedAt: editMoment,
+      effectiveFrom: editMoment, effectiveTo: null
+    };
+    const afterEdit: MedLogDraft[] = MedLifecycleService.obligations([planV2], chainMed, editMoment);
+    // 保存时刻恰好等于时刻点时，「不早于保存时刻」允许该时刻本身（R01.2 的下界是 >=）
+    eq(afterEdit[0].scheduledTime, ts(2026, 10, 8, 9, 0), '链路⑤改时点后新版本从 09:00 起生成（含保存当刻）');
+    ok(afterEdit[1].scheduledTime === ts(2026, 10, 9, 9, 0), '链路⑤后续按日推进');
+    eq(MedLifecycleService.effectiveTo(planV1Closed, day8), editMoment, '链路⑤旧版本有效区间在改时点处收口');
+
+    // ⑥ 停药：不再产生任何应服义务
+    const planV2Stopped: MedPlan = {
+      id: 502, medicationId: 1, timeSlots: ['09:00'], startDate: '2026-10-01', endDate: null,
+      isActive: false, createdAt: editMoment, updatedAt: ts(2026, 10, 10, 0, 0),
+      effectiveFrom: editMoment, effectiveTo: ts(2026, 10, 10, 0, 0)
+    };
+    eq(MedLifecycleService.obligations([planV2Stopped], chainMed, ts(2026, 10, 20, 12, 0)).length, 0,
+      '链路⑥停药后不再生成应服义务');
+
+    // ⑦ 导出恢复：把链路上的数据打包成完整备份，恢复后逐表条数一致
+    const chainBp: BpRecord[] = [rec(ts(2026, 10, 2, 7, 0), 122, 80, 68, 1)];
+    const chainFile: BackupFile = BackupService.build(chainBp, chainMed, [planV2Stopped], takenLogs,
+      '1.0.0', day8);
+    const chainParsed = BackupService.parse(BackupService.serialize(chainFile));
+    ok(chainParsed.file !== null, '链路⑦备份可解析');
+    const chainFile2 = chainParsed.file as BackupFile;
+    eq(BackupService.validate(chainFile2).length, 0, '链路⑦备份逐字段校验通过');
+    eq(chainFile2.logs.length, takenLogs.length, '链路⑦备份保留全部打卡记录');
+    eq(chainFile2.plans[0].isActive, false, '链路⑦备份保留停用状态（CSV 做不到）');
+
+    // ⑧ 历史报告：周期内有用量数据时，即使计划已停用也要出用药小结（R11）
+    const chainReport = ReportService.build('week', ReportService.weekRange(ts(2026, 10, 2, 12, 0)),
+      chainBp, takenLogs, [planV2Stopped], RPT_VOCAB, ts(2026, 10, 2, 12, 0));
+    ok(chainReport !== null, '链路⑧历史周期可生成报告');
+    if (chainReport !== null) {
+      eq(chainReport.hasMedicationData, true, '链路⑧计划已停用但周期内有打卡 → 仍出用药小结');
+      eq(chainReport.adherence.taken >= 1, true, '链路⑧报告依从率含链路中的打卡');
+    }
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;

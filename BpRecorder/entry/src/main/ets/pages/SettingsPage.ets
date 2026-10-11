@@ -1,7 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { Disclaimers, RefBasis } from '../common/Constants';
+import { Disclaimers, RefBasis , ShareConst } from '../common/Constants';
 import { DateUtils } from '../common/DateUtils';
 import { Logger } from '../common/Logger';
 import { Prefs } from '../common/Prefs';
@@ -416,6 +416,12 @@ struct SettingsPage {
     try {
       await BpDatabase.getInstance().clearAll();
       await ReminderService.cancelAll();
+      // 审查 R15.2：清空业务数据时一并清理**本应用可控**的健康图像缓存（cacheDir 内 bp_ 前缀），
+      // 保留 5 分钟内新建的临时图以免打断正在进行的系统分享/打印；
+      // 明确不动外部相册与用户自己保存的文件（那些不属于本应用可删除范围）。
+      const now: number = DateUtils.now();
+      const pruned: number = await FileService.pruneTempImages(this.context(), ShareConst.TEMP_IMAGE_PREFIX, now, 0, 0);
+      Logger.info(TAG, `clear all: pruned temp images=${pruned}`);
       Prefs.resetDisclaimer(this.context());
       this.toast($r('app.string.toast_cleared'));
     } catch (err) {
