@@ -74,8 +74,8 @@ const T = {
 };
 const SCHEMA_VERSION = constOf('SCHEMA_VERSION');
 
-if (SCHEMA_VERSION !== 3) {
-  throw new Error(`本校验针对 v3 结构编写，但 Constants.ets 中 SCHEMA_VERSION=${SCHEMA_VERSION}`);
+if (SCHEMA_VERSION !== 4) {
+  throw new Error(`本校验针对 v4 结构编写，但 Constants.ets 中 SCHEMA_VERSION=${SCHEMA_VERSION}`);
 }
 
 /** 把模板字符串里的 ${DbConst.XXX} 替换为真实值 */
@@ -420,6 +420,10 @@ if (droppedOk) {
   const row = v2db.prepare(`SELECT effective_from, effective_to FROM ${T.T_PLAN} WHERE id = 1`).get();
   eq(row.effective_from, 0, '旧行的 effective_from 默认 0（表示未回填，调用方按既有列推导）');
   eq(row.effective_to, null, '旧行的 effective_to 默认 NULL（长期 / 未回填）');
+  // v4：med_log.source_plan_id（历史行来源未知 → NULL）
+  ok(columnNames(v2db, T.T_LOG).includes('source_plan_id'), 'ALTER 后 med_log 有 source_plan_id');
+  const logCol = v2db.prepare(`PRAGMA table_info(${T.T_LOG})`).all().find((c) => c.name === 'source_plan_id');
+  eq(logCol && logCol.dflt_value, null, 'source_plan_id 默认 NULL（不伪造历史来源）');
   // 幂等：再跑一遍 ALTER 不应抛错
   let secondPassOk = true;
   try {

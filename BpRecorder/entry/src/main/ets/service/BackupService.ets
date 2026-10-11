@@ -56,7 +56,8 @@ export class BackupService {
         id: l.id, medicationId: l.medicationId, medName: l.medName, dosage: l.dosage,
         scheduledTime: l.scheduledTime, takenTime: l.takenTime === undefined ? null : l.takenTime,
         status: `${l.status}`, note: l.note === undefined ? null : l.note,
-        createdAt: l.createdAt, updatedAt: l.updatedAt
+        createdAt: l.createdAt, updatedAt: l.updatedAt,
+        sourcePlanId: l.planId
       });
     }
     const counts: BackupCounts = {

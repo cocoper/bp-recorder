@@ -70,7 +70,9 @@ export interface MedLog {
   status: MedLogStatus;
   note: string | null;
   createdAt: number;
-  updatedAt: number;
+  updatedAt: number;  /** 来源计划 id（审查 R01.3：记录是哪一版计划生成/补的这条打卡） */
+  planId?: number;
+
 }
 
 /** 打卡记录草稿（预生成用） */
@@ -78,7 +80,9 @@ export interface MedLogDraft {
   medicationId: number;
   medName: string;
   dosage: string;
-  scheduledTime: number;
+  scheduledTime: number;  /** 来源计划 id（审查 R01.3：记录是哪一版计划生成/补的这条打卡） */
+  planId?: number;
+
 }
 
 /** 首页「今日服药」卡片的一行（§5.1 / FR-9.3） */

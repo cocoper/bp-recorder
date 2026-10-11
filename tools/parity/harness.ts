@@ -1299,6 +1299,11 @@ async function reviewScenarios(): Promise<void> {
     eq(MedLifecycleService.effectiveTo(openEnded, ts(2026, 10, 6, 12, 0)),
       DateUtils.endOfDay(DateUtils.addDays(ts(2026, 10, 6, 12, 0), MedLimits.PRE_GEN_DAYS)),
       'R01.3 长期计划（effective_to = null）仍用滚动生成窗口');
+    // R01.3 续：生成的草稿必须带上来源计划 id（source_plan_id 的写入侧）
+    const genDrafts: MedLogDraft[] = MedService.pendingDrafts([p1], medsR01, ts(2026, 10, 1, 0, 0), 2);
+    ok(genDrafts.length > 0 && genDrafts[0].planId === 11,
+      'R01.3 预生成草稿带来源计划 id（写库后可追溯是哪一版计划生成）');
+
     eq(MedLifecycleService.effectiveFrom({ id: 19, medicationId: 1, timeSlots: ['08:00'],
       startDate: '2026-10-01', endDate: null, isActive: true, createdAt: ts(2026, 9, 20, 0, 0),
       updatedAt: 0, effectiveFrom: 0 }), ts(2026, 10, 1, 0, 0),

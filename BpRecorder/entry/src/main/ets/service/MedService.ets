@@ -321,7 +321,8 @@ export class MedService {
           medicationId: s.medicationId,
           medName: s.medName,
           dosage: s.dosage,
-          scheduledTime: s.scheduledTime
+          scheduledTime: s.scheduledTime,
+          planId: s.planId
         });
       }
     }

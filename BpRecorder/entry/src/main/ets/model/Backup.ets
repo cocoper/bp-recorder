@@ -75,6 +75,8 @@ export interface BackupLog {
   note: string | null;
   createdAt: number;
   updatedAt: number;
+  /** 来源计划 id（审查 R01.3；历史数据可缺省） */
+  sourcePlanId?: number;
 }
 
 /** 备份文件本体 */

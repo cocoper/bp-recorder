@@ -19,7 +19,7 @@ const COLS_BP: string[] = [
 ];
 const COLS_MED: string[] = ['id', 'name', 'dosage', 'note', 'is_active', 'created_at', 'updated_at'];
 const COLS_PLAN: string[] = ['id', 'medication_id', 'time_slots', 'start_date', 'end_date', 'is_active', 'created_at', 'updated_at', 'effective_from', 'effective_to'];
-const COLS_LOG: string[] = ['id', 'medication_id', 'med_name', 'dosage', 'scheduled_time', 'taken_time', 'status', 'note', 'created_at', 'updated_at'];
+const COLS_LOG: string[] = ['id', 'medication_id', 'med_name', 'dosage', 'scheduled_time', 'taken_time', 'status', 'note', 'created_at', 'updated_at', 'source_plan_id'];
 
 /** 建表语句（严格对齐策划文档 §3.1） */
 const DDL: string[] = [
@@ -71,7 +71,9 @@ const DDL: string[] = [
      status         TEXT    NOT NULL DEFAULT 'pending',
      note           TEXT,
      created_at     INTEGER NOT NULL,
-     updated_at     INTEGER NOT NULL
+     updated_at     INTEGER NOT NULL,
+     -- v4（审查 R01.3）：生成这条打卡的来源计划 id（历史行未知 → NULL）
+     source_plan_id INTEGER
    )`,
   `CREATE INDEX IF NOT EXISTS idx_medlog_scheduled ON med_log (scheduled_time)`,
   `CREATE INDEX IF NOT EXISTS idx_medlog_med_time ON med_log (medication_id, scheduled_time)`,
@@ -330,6 +332,15 @@ export class BpDatabase implements BackupTarget {
           await store.executeSql(`ALTER TABLE ${DbConst.T_PLAN} ADD COLUMN effective_to INTEGER`);
         }
         await BpDatabase.backfillPlanWindows(store);
+      }
+
+      if (current < 4) {
+        // ── v3 → v4（审查 R01.3）──
+        // med_log.source_plan_id：记录这条打卡由哪一版计划生成/补齐。历史行来源未知，保持 NULL。
+        if (!await BpDatabase.hasColumn(store, DbConst.T_LOG, 'source_plan_id')) {
+          await store.executeSql(
+            `ALTER TABLE ${DbConst.T_LOG} ADD COLUMN source_plan_id INTEGER`);
+        }
       }
 
       await store.executeSql(`PRAGMA user_version = ${DbConst.SCHEMA_VERSION}`);
@@ -1015,9 +1026,10 @@ export class BpDatabase implements BackupTarget {
         const d: MedLogDraft = pending[i];
         await store.executeSql(
           `INSERT OR IGNORE INTO ${DbConst.T_LOG}
-           (medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at)
-           VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?)`,
-          [d.medicationId, d.medName, d.dosage, d.scheduledTime, MedLogStatus.PENDING, now, now]
+           (medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at, source_plan_id)
+           VALUES (?, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`,
+          [d.medicationId, d.medName, d.dosage, d.scheduledTime, MedLogStatus.PENDING, now, now,
+            d.planId === undefined ? null : d.planId]
         );
       }
     };
@@ -1136,7 +1148,8 @@ export class BpDatabase implements BackupTarget {
 
   /** 导入用：按原始状态与打卡时间写入（不入库为 pending） */
   async insertMedLogForImport(medicationId: number, medName: string, dosage: string,
-    scheduledTime: number, status: MedLogStatus, takenTime: number | null, note: string | null, tx?: TxSession): Promise<number> {
+    scheduledTime: number, status: MedLogStatus, takenTime: number | null, note: string | null,
+    tx?: TxSession, planId?: number): Promise<number> {
     return this.write(tx, async (store: relationalStore.RdbStore): Promise<number> => {
     const now: number = DateUtils.now();
     const values: relationalStore.ValuesBucket = {
@@ -1148,7 +1161,8 @@ export class BpDatabase implements BackupTarget {
       'status': `${status}`,
       'note': note,
       'created_at': now,
-      'updated_at': now
+      'updated_at': now,
+      'source_plan_id': planId === undefined ? null : planId
     };
     return store.insert(DbConst.T_LOG, values);
     });
@@ -1170,6 +1184,7 @@ export class BpDatabase implements BackupTarget {
   private static mapLog(rs: relationalStore.ResultSet): MedLog {
     const takenIdx: number = rs.getColumnIndex('taken_time');
     const noteIdx: number = rs.getColumnIndex('note');
+    const planIdx: number = rs.getColumnIndex('source_plan_id');
     return {
       id: rs.getLong(rs.getColumnIndex('id')),
       medicationId: rs.getLong(rs.getColumnIndex('medication_id')),
@@ -1180,7 +1195,8 @@ export class BpDatabase implements BackupTarget {
       status: parseMedLogStatus(rs.getString(rs.getColumnIndex('status'))),
       note: rs.isColumnNull(noteIdx) ? null : rs.getString(noteIdx),
       createdAt: rs.getLong(rs.getColumnIndex('created_at')),
-      updatedAt: rs.getLong(rs.getColumnIndex('updated_at'))
+      updatedAt: rs.getLong(rs.getColumnIndex('updated_at')),
+      planId: rs.isColumnNull(planIdx) ? undefined : rs.getLong(planIdx)
     };
   }
 
@@ -1261,10 +1277,11 @@ export class BpDatabase implements BackupTarget {
       const fallback: number = DateUtils.now();
       await store.executeSql(
         `INSERT OR REPLACE INTO med_log
-           (id, medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, medication_id, med_name, dosage, scheduled_time, taken_time, status, note, created_at, updated_at, source_plan_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [l.id, l.medicationId, l.medName, l.dosage, l.scheduledTime, l.takenTime, `${l.status}`, l.note,
-          l.createdAt > 0 ? l.createdAt : fallback, l.updatedAt > 0 ? l.updatedAt : fallback]);
+          l.createdAt > 0 ? l.createdAt : fallback, l.updatedAt > 0 ? l.updatedAt : fallback,
+          l.sourcePlanId === undefined ? null : l.sourcePlanId]);
     });
   }
 

@@ -141,7 +141,7 @@ export class DbConst {
    * v2：新增「bp_record 三元组唯一」「med_plan 每药品至多一条生效计划」两条唯一索引，
    *     并在建索引前清理历史重复数据（里程碑 v1.3 审查意见 P1-4）
    */
-  static readonly SCHEMA_VERSION: number = 3;
+  static readonly SCHEMA_VERSION: number = 4;
   static readonly T_BP: string = 'bp_record';
   static readonly T_MED: string = 'medication';
   static readonly T_PLAN: string = 'med_plan';
