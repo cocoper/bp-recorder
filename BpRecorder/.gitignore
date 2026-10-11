@@ -1,0 +1,22 @@
+# ===== 构建产物（可由源码重新生成，不入库）=====
+/entry/build/
+/AppScope/build/
+/build/
+/.hvigor/
+/.cxx/
+/.preview/
+**/.preview/
+*.hap
+*.har
+*.hsp
+
+# ===== 依赖（由 `ohpm install` 依据 oh-package-lock.json5 还原，不入库）=====
+/oh_modules/
+/entry/oh_modules/
+
+# ===== IDE / 本机配置 =====
+/.idea/
+.DS_Store
+
+# 说明：签名口令与密钥库路径在 build-profile.json5 中，本文件**不**忽略它
+#（该文件同时承载 SDK 版本等工程配置），见 MEMORY.md 的「待处理：签名口令外置」。

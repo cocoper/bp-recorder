@@ -1,0 +1,8 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "血压助手 - 个人单机版血压记录与分析应用",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19"
+  }
+}

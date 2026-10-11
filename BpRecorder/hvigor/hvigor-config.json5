@@ -1,0 +1,30 @@
+{
+  /*
+   * hvigor 构建系统配置。
+   *
+   * modelVersion 与 dependencies 是**必选字段** —— 缺少本文件或缺少这两个字段时，
+   * DevEco 打开工程会报 `Schema validate failed ... missingProperty: 'dependencies'`。
+   *
+   * 本工程零三方构建插件依赖，因此 dependencies 为空对象；
+   * 其余各段为可选调优项，保持与 DevEco 5.0 默认模板一致（全部注释掉即用默认值）。
+   */
+  "modelVersion": "5.0.0",
+  "dependencies": {
+  },
+  "execution": {
+    // "analyze": "normal",           /* 构建分析模式：[normal | advanced | false]，默认 normal */
+    // "daemon": true,                /* 是否启用守护进程编译：[true | false]，默认 true */
+    // "incremental": true,           /* 是否启用增量编译：[true | false]，默认 true */
+    // "parallel": true,              /* 是否启用并行编译：[true | false]，默认 true */
+    // "typeCheck": false,            /* 是否启用类型检查：[true | false]，默认 false */
+  },
+  "logging": {
+    // "level": "info"                /* 日志级别：[debug | info | warn | error]，默认 info */
+  },
+  "debugging": {
+    // "stacktrace": false            /* 是否关闭堆栈追踪编译：[true | false]，默认 false */
+  },
+  "nodeOptions": {
+    // "maxOldSpaceSize": 8192        /* 守护进程最大堆内存，单位 M，默认不限制 */
+  }
+}

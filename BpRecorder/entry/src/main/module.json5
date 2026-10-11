@@ -1,0 +1,71 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    "deviceTypes": [
+      "phone"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "action.system.home"
+            ]
+          }
+        ]
+      }
+    ],
+    // NFR-5：不申请任何网络权限（无 ohos.permission.INTERNET）
+    // 说明：策划文档 §4.1 写作 ohos.permission.REMINDER_AGENT，该名称在 API 12 不存在；
+    //      真实权限名为 ohos.permission.PUBLISH_AGENT_REMINDER，在此按真实名称声明。
+    //      【v1.14 勘误】此前注释称该权限「属受管控能力，需在 AGC 申请开放能力并改用手动签名」，
+    //      与 SDK 事实不符：sdk/default/openharmony/toolchains/lib/PermissionDefinitions.json 中
+    //      该权限为 grantMode: system_grant、availableLevel: normal、provisionEnable: true，
+    //      即安装即授予、不是受限 / ACL 权限，无需 AGC 开放能力。
+    //      真正的前置条件是**通知授权**（notificationManager.requestEnableNotification）：
+    //      未授权时 publishReminder 报 1700001「Notification is not enabled」，一条提醒都发不出去。
+    //      见 ReminderService.ensureNotificationEnabled。
+    "requestPermissions": [
+      {
+        "name": "ohos.permission.PUBLISH_AGENT_REMINDER",
+        "reason": "$string:reason_publish_agent_reminder",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      },
+      // 打印框架（FR-10.3 的「打印 / 另存为 PDF」输出）在缺少该权限时调用会返回 201，
+      // 属本机能力权限、与网络无关，故与 NFR-5「不申请任何网络权限」不冲突。
+      // 策划文档 §4.1 的权限清单未列出该项，此处按官方要求补齐（见 docs/决策记录.md）。
+      {
+        "name": "ohos.permission.PRINT",
+        "reason": "$string:reason_print",
+        "usedScene": {
+          "abilities": [
+            "EntryAbility"
+          ],
+          "when": "inuse"
+        }
+      }
+    ]
+  }
+}

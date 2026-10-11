@@ -1,0 +1,13 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/RecordEditPage",
+    "pages/ChartPage",
+    "pages/StatsPage",
+    "pages/MedPage",
+    "pages/MedPlanEditPage",
+    "pages/ReportPage",
+    "pages/ImportPage",
+    "pages/SettingsPage"
+  ]
+}

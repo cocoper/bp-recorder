@@ -1,0 +1,279 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#121212"
+    },
+
+    {
+      "name": "page_bg",
+      "value": "#121212"
+    },
+    {
+      "name": "surface",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "surface_subtle",
+      "value": "#2A2A2A"
+    },
+    {
+      "name": "border",
+      "value": "#333333"
+    },
+    {
+      "name": "divider",
+      "value": "#2E2E2E"
+    },
+
+    {
+      "name": "text_primary",
+      "value": "#F0F0F0"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#B0B0B0"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#808080"
+    },
+    {
+      "name": "text_disabled",
+      "value": "#5A5A5A"
+    },
+
+    {
+      "name": "primary",
+      "value": "#4A80F0"
+    },
+    {
+      "name": "on_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "on_primary_secondary",
+      "value": "#D5E0F8"
+    },
+    {
+      "name": "btn_disabled",
+      "value": "#4A4A4A"
+    },
+    {
+      "name": "danger",
+      "value": "#FF6B6B"
+    },
+    {
+      "name": "danger_bg",
+      "value": "#3A1F1F"
+    },
+    {
+      "name": "action_edit_bg",
+      "value": "#3A6FE0"
+    },
+    {
+      "name": "action_delete_bg",
+      "value": "#D24848"
+    },
+    {
+      "name": "chip_bg",
+      "value": "#2A2A2A"
+    },
+    {
+      "name": "chip_text",
+      "value": "#B0B0B0"
+    },
+    {
+      "name": "bar_track",
+      "value": "#2A2A2A"
+    },
+
+    {
+      "name": "warn_bg",
+      "value": "#3A2E17"
+    },
+    {
+      "name": "warn_text",
+      "value": "#F0C070"
+    },
+    {
+      "name": "warn_text_secondary",
+      "value": "#C9A468"
+    },
+
+    {
+      "name": "grade_normal",
+      "value": "#4CC98A"
+    },
+    {
+      "name": "grade_high_normal",
+      "value": "#E8B93D"
+    },
+    {
+      "name": "grade_1",
+      "value": "#FF9E33"
+    },
+    {
+      "name": "grade_2",
+      "value": "#FF6B6B"
+    },
+    {
+      "name": "grade_3",
+      "value": "#E0526A"
+    },
+    {
+      "name": "severe_bg",
+      "value": "#7A0F1B"
+    },
+    {
+      "name": "severe_text",
+      "value": "#FF7A8A"
+    },
+    {
+      "name": "severe_divider",
+      "value": "#A83348"
+    },
+
+    {
+      "name": "med_pending",
+      "value": "#6B9BFF"
+    },
+    {
+      "name": "med_taken",
+      "value": "#4CC98A"
+    },
+    {
+      "name": "med_skipped",
+      "value": "#909090"
+    },
+    {
+      "name": "med_missed",
+      "value": "#FF6B6B"
+    },
+    {
+      "name": "med_makeup",
+      "value": "#E8B93D"
+    },
+
+    {
+      "name": "print_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "print_text_primary",
+      "value": "#1A1A1A"
+    },
+    {
+      "name": "print_text_secondary",
+      "value": "#666666"
+    },
+    {
+      "name": "print_divider",
+      "value": "#E3E6EA"
+    },
+    {
+      "name": "print_bar_track",
+      "value": "#EFF1F4"
+    },
+    {
+      "name": "print_axis",
+      "value": "#C9CDD4"
+    },
+    {
+      "name": "print_ref_line",
+      "value": "#B9BEC6"
+    },
+    {
+      "name": "print_line_sys",
+      "value": "#E64545"
+    },
+    {
+      "name": "print_line_dia",
+      "value": "#2F6FED"
+    },
+    {
+      "name": "print_line_hr",
+      "value": "#22A06B"
+    },
+    {
+      "name": "print_med_mark",
+      "value": "#E0A200"
+    },
+    {
+      "name": "print_watermark",
+      "value": "#9AA0A6"
+    },
+    {
+      "name": "print_tooltip_bg",
+      "value": "#333333"
+    },
+    {
+      "name": "print_tooltip_text",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "print_delta_up",
+      "value": "#E64545"
+    },
+    {
+      "name": "print_delta_down",
+      "value": "#22A06B"
+    },
+    {
+      "name": "chart_bg",
+      "value": "#1E1E1E"
+    },
+    {
+      "name": "chart_text_primary",
+      "value": "#F0F0F0"
+    },
+    {
+      "name": "chart_text_secondary",
+      "value": "#B0B0B0"
+    },
+    {
+      "name": "chart_axis",
+      "value": "#3A3A3C"
+    },
+    {
+      "name": "chart_ref_line",
+      "value": "#4A4A50"
+    },
+    {
+      "name": "chart_line_sys",
+      "value": "#FF6B6B"
+    },
+    {
+      "name": "chart_line_dia",
+      "value": "#6BA1FF"
+    },
+    {
+      "name": "chart_line_hr",
+      "value": "#4FCB8B"
+    },
+    {
+      "name": "chart_med_mark",
+      "value": "#FFC633"
+    },
+    {
+      "name": "chart_watermark",
+      "value": "#6E6E73"
+    },
+    {
+      "name": "chart_tooltip_bg",
+      "value": "#3A3A3C"
+    },
+    {
+      "name": "chart_tooltip_text",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "chart_point_abnormal",
+      "value": "#FF9E33"
+    },
+    {
+      "name": "chart_gauge_pointer",
+      "value": "#F0F0F0"
+    }
+  ]
+}

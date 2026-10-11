@@ -1,0 +1,1555 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "血压助手主模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "血压助手"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "血压助手"
+    },
+    {
+      "name": "app_title",
+      "value": "血压助手"
+    },
+    {
+      "name": "reason_publish_agent_reminder",
+      "value": "用于在设定时间提醒您服药"
+    },
+    {
+      "name": "reason_print",
+      "value": "用于将周期报告通过系统打印界面输出为 PDF"
+    },
+
+    {
+      "name": "placeholder_empty",
+      "value": ""
+    },
+    {
+      "name": "arrow_right",
+      "value": "›"
+    },
+    {
+      "name": "arrow_back",
+      "value": "‹"
+    },
+    {
+      "name": "list_separator",
+      "value": "、"
+    },
+    {
+      "name": "dot_separator",
+      "value": " · "
+    },
+    {
+      "name": "unit_mmhg",
+      "value": "mmHg"
+    },
+    {
+      "name": "unit_bpm",
+      "value": "bpm"
+    },
+    {
+      "name": "heart_rate_value",
+      "value": "心率 %d bpm"
+    },
+    {
+      "name": "heart_rate_empty",
+      "value": "心率 —"
+    },
+    {
+      "name": "percent_value",
+      "value": "%s"
+    },
+
+    {
+      "name": "action_back",
+      "value": "返回"
+    },
+    {
+      "name": "action_save",
+      "value": "保存"
+    },
+    {
+      "name": "action_edit",
+      "value": "编辑"
+    },
+    {
+      "name": "action_delete",
+      "value": "删除"
+    },
+    {
+      "name": "action_delete_record",
+      "value": "删除这条记录"
+    },
+    {
+      "name": "action_cancel",
+      "value": "取消"
+    },
+    {
+      "name": "action_add",
+      "value": "新增"
+    },
+    {
+      "name": "action_pick",
+      "value": "选择 ▸"
+    },
+    {
+      "name": "action_zoom",
+      "value": "放大"
+    },
+    {
+      "name": "action_share",
+      "value": "分享"
+    },
+    {
+      "name": "action_print",
+      "value": "打印"
+    },
+    {
+      "name": "action_gen_report",
+      "value": "生成报告 ▸"
+    },
+    {
+      "name": "action_got_it",
+      "value": "知道了"
+    },
+
+    {
+      "name": "nav_chart",
+      "value": "图表"
+    },
+    {
+      "name": "nav_med",
+      "value": "用药"
+    },
+    {
+      "name": "nav_add",
+      "value": "+"
+    },
+    {
+      "name": "nav_stats",
+      "value": "统计"
+    },
+    {
+      "name": "nav_settings",
+      "value": "设置"
+    },
+
+    {
+      "name": "index_total",
+      "value": "共 %d 条记录"
+    },
+    {
+      "name": "empty_records",
+      "value": "还没有血压记录"
+    },
+    {
+      "name": "empty_records_hint",
+      "value": "点击底部「+」开始记录第一条"
+    },
+    {
+      "name": "list_loading",
+      "value": "加载中…"
+    },
+    {
+      "name": "list_no_more",
+      "value": "没有更多了"
+    },
+    {
+      "name": "today_overview",
+      "value": "今天概览"
+    },
+    {
+      "name": "today_avg",
+      "value": "%d / %d mmHg"
+    },
+    {
+      "name": "today_no_bp",
+      "value": "今天还没有测量记录"
+    },
+
+    {
+      "name": "grade_normal",
+      "value": "正常"
+    },
+    {
+      "name": "grade_high_normal",
+      "value": "正常高值"
+    },
+    {
+      "name": "grade_1",
+      "value": "1 级高血压"
+    },
+    {
+      "name": "grade_2",
+      "value": "2 级高血压"
+    },
+    {
+      "name": "grade_3",
+      "value": "3 级高血压"
+    },
+    {
+      "name": "grade_standard_cn",
+      "value": "诊室血压 140/90"
+    },
+    {
+      "name": "grade_standard_home",
+      "value": "家庭自测血压 135/85"
+    },
+
+    {
+      "name": "advice_normal",
+      "value": "本次血压正常，请保持规律监测。"
+    },
+    {
+      "name": "advice_high_normal",
+      "value": "本次血压处于正常高值，建议注意低盐饮食与规律作息，持续观察。"
+    },
+    {
+      "name": "advice_grade_1",
+      "value": "本次血压偏高（1 级范围），建议连续监测 7 天，如持续偏高请咨询医生。"
+    },
+    {
+      "name": "advice_grade_2",
+      "value": "本次血压明显升高（2 级范围），建议尽快就医咨询。"
+    },
+    {
+      "name": "advice_grade_3",
+      "value": "⚠ 本次血压重度升高，请静坐休息 5 分钟后复测；若复测仍在此范围或伴有头晕胸闷等症状，请立即就医。"
+    },
+
+    {
+      "name": "period_morning",
+      "value": "晨起"
+    },
+    {
+      "name": "period_forenoon",
+      "value": "上午"
+    },
+    {
+      "name": "period_afternoon",
+      "value": "下午"
+    },
+    {
+      "name": "period_night",
+      "value": "睡前"
+    },
+    {
+      "name": "period_other",
+      "value": "其他"
+    },
+
+    {
+      "name": "warn_icon",
+      "value": "⚠"
+    },
+    {
+      "name": "warn_title",
+      "value": "近期血压偏高"
+    },
+    {
+      "name": "warn_avg",
+      "value": "均值 %d / %d"
+    },
+    {
+      "name": "warn_detail",
+      "value": "近 %d 天平均血压达到家庭自测高血压界值（135/85 mmHg），建议持续监测并咨询医生。"
+    },
+
+    {
+      "name": "disclaimer_title",
+      "value": "免责声明"
+    },
+    {
+      "name": "disclaimer_short",
+      "value": "本 App 提示仅供参考，不构成医疗诊断，如有不适请及时就医。"
+    },
+    {
+      "name": "disclaimer_bp",
+      "value": "本 App 提示仅供参考，不构成医疗诊断，如有不适请及时就医。"
+    },
+    {
+      "name": "disclaimer_med",
+      "value": "请严格遵医嘱服药，本 App 不提供用药建议。"
+    },
+    {
+      "name": "disclaimer_full",
+      "value": "本 App 提示仅供参考，不构成医疗诊断，如有不适请及时就医。\n本 App 不提供用药建议，请严格遵医嘱服药。\n所有数据仅保存在本机，不上传至任何服务器。"
+    },
+
+    {
+      "name": "title_new_record",
+      "value": "记录血压"
+    },
+    {
+      "name": "title_edit_record",
+      "value": "编辑记录"
+    },
+    {
+      "name": "title_chart",
+      "value": "趋势"
+    },
+    {
+      "name": "zoom_scroll_hint",
+      "value": "双指捏合可缩放，左右滑动可查看全部日期"
+    },
+    {
+      "name": "zoom_out",
+      "value": "缩小"
+    },
+    {
+      "name": "zoom_in",
+      "value": "放大"
+    },
+    {
+      "name": "zoom_fit",
+      "value": "全览"
+    },
+    {
+      "name": "rotate_auto",
+      "value": "自动旋转"
+    },
+    {
+      "name": "rotate_landscape",
+      "value": "横屏"
+    },
+    {
+      "name": "rotate_portrait",
+      "value": "竖屏"
+    },
+    {
+      "name": "zoom_level",
+      "value": "缩放 %s"
+    },
+    {
+      "name": "title_stats",
+      "value": "统计"
+    },
+    {
+      "name": "title_med",
+      "value": "用药管理"
+    },
+    {
+      "name": "title_med_plan",
+      "value": "编辑服药计划"
+    },
+    {
+      "name": "title_report",
+      "value": "周期报告"
+    },
+    {
+      "name": "title_import",
+      "value": "导入数据"
+    },
+    {
+      "name": "title_settings",
+      "value": "设置"
+    },
+
+    {
+      "name": "field_systolic",
+      "value": "收缩压（高压）"
+    },
+    {
+      "name": "field_diastolic",
+      "value": "舒张压（低压）"
+    },
+    {
+      "name": "field_heart_rate",
+      "value": "心率"
+    },
+    {
+      "name": "field_measure_time",
+      "value": "测量时间"
+    },
+    {
+      "name": "field_period",
+      "value": "时段"
+    },
+    {
+      "name": "field_note",
+      "value": "备注"
+    },
+    {
+      "name": "field_optional",
+      "value": "（选填）"
+    },
+    {
+      "name": "field_med_name",
+      "value": "药品名称"
+    },
+    {
+      "name": "field_med_dosage",
+      "value": "单次剂量"
+    },
+    {
+      "name": "field_per_day_count",
+      "value": "每日次数"
+    },
+    {
+      "name": "field_slot_index",
+      "value": "时间点 %d"
+    },
+    {
+      "name": "field_start_date",
+      "value": "开始日期"
+    },
+    {
+      "name": "field_end_date",
+      "value": "结束日期"
+    },
+    {
+      "name": "note_placeholder",
+      "value": "如：服药后、运动后"
+    },
+
+    {
+      "name": "err_sys_required",
+      "value": "请填写收缩压"
+    },
+    {
+      "name": "err_dia_required",
+      "value": "请填写舒张压"
+    },
+    {
+      "name": "err_sys_invalid",
+      "value": "收缩压必须是整数"
+    },
+    {
+      "name": "err_dia_invalid",
+      "value": "舒张压必须是整数"
+    },
+    {
+      "name": "err_sys_range",
+      "value": "收缩压应在 40–300 mmHg 之间"
+    },
+    {
+      "name": "err_dia_range",
+      "value": "舒张压应在 30–200 mmHg 之间"
+    },
+    {
+      "name": "err_sys_le_dia",
+      "value": "收缩压必须大于舒张压"
+    },
+    {
+      "name": "err_hr_invalid",
+      "value": "心率必须是整数"
+    },
+    {
+      "name": "err_hr_range",
+      "value": "心率应在 30–220 bpm 之间"
+    },
+    {
+      "name": "err_note_too_long",
+      "value": "备注不能超过 100 字"
+    },
+    {
+      "name": "err_time_invalid",
+      "value": "测量时间无效"
+    },
+    {
+      "name": "err_time_future",
+      "value": "测量时间不能晚于当前时间"
+    },
+    {
+      "name": "err_duplicate_record",
+      "value": "已存在相同测量时间与数值的记录，请检查是否重复录入"
+    },
+    {
+      "name": "err_med_name_required",
+      "value": "请填写药品名称"
+    },
+    {
+      "name": "err_med_name_too_long",
+      "value": "药品名称不能超过 30 字"
+    },
+    {
+      "name": "err_med_dosage_required",
+      "value": "请填写单次剂量"
+    },
+    {
+      "name": "err_med_dosage_too_long",
+      "value": "剂量文字不能超过 30 字"
+    },
+    {
+      "name": "err_slot_count",
+      "value": "每日次数必须为 1–4 次"
+    },
+    {
+      "name": "err_slot_invalid",
+      "value": "时间点格式应为 HH:mm"
+    },
+    {
+      "name": "err_slot_dup",
+      "value": "存在重复的时间点"
+    },
+    {
+      "name": "err_slot_count_mismatch",
+      "value": "「每日次数」与「时间点」数量不一致"
+    },
+    {
+      "name": "err_start_date_invalid",
+      "value": "开始日期无效"
+    },
+    {
+      "name": "err_end_date_invalid",
+      "value": "结束日期无效"
+    },
+    {
+      "name": "err_end_before_start",
+      "value": "结束日期不能早于开始日期"
+    },
+
+    {
+      "name": "err_imp_missing_column",
+      "value": "列数不足，缺少必填列"
+    },
+    {
+      "name": "err_imp_time_invalid",
+      "value": "日期或时间格式非法"
+    },
+    {
+      "name": "err_imp_status_unknown",
+      "value": "状态文字无法识别"
+    },
+    {
+      "name": "err_imp_med_name_required",
+      "value": "药品名称为空"
+    },
+    {
+      "name": "err_imp_taken_time_invalid",
+      "value": "实际打卡时间格式非法"
+    },
+    {
+      "name": "err_imp_unknown",
+      "value": "数据格式无法识别"
+    },
+
+    {
+      "name": "error_db_init",
+      "value": "数据库初始化失败，数据功能暂不可用。请重启应用后重试。"
+    },
+    {
+      "name": "error_db_read",
+      "value": "读取数据失败"
+    },
+    {
+      "name": "error_db_write",
+      "value": "保存失败，本次改动未生效"
+    },
+    {
+      "name": "error_record_missing",
+      "value": "记录不存在或已被删除"
+    },
+    {
+      "name": "error_export",
+      "value": "导出失败"
+    },
+    {
+      "name": "error_import_parse",
+      "value": "文件解析失败，请确认是 CSV 文件"
+    },
+    {
+      "name": "error_import_commit",
+      "value": "导入失败，已回滚，未写入任何数据"
+    },
+    {
+      "name": "error_snapshot",
+      "value": "生成图片失败"
+    },
+    {
+      "name": "error_save_album",
+      "value": "保存到相册失败"
+    },
+    {
+      "name": "error_print",
+      "value": "调起打印失败"
+    },
+
+    {
+      "name": "chart_empty",
+      "value": "暂无数据，请先记录"
+    },
+    {
+      "name": "chart_range_subtitle",
+      "value": "近 %d 天"
+    },
+    {
+      "name": "chart_stat_latest",
+      "value": "最新"
+    },
+    {
+      "name": "chart_ref_target",
+      "value": "参考"
+    },
+    {
+      "name": "chart_card_title",
+      "value": "血压趋势（mmHg）"
+    },
+    {
+      "name": "chart_tap_hint",
+      "value": "点击图表可查看当日数值"
+    },
+    {
+      "name": "legend_systolic",
+      "value": "收缩压"
+    },
+    {
+      "name": "legend_diastolic",
+      "value": "舒张压"
+    },
+    {
+      "name": "legend_heart_rate",
+      "value": "心率"
+    },
+    {
+      "name": "legend_med_mark",
+      "value": "当日已完成服药"
+    },
+    {
+      "name": "legend_abnormal",
+      "value": "异常"
+    },
+    {
+      "name": "ref_caption",
+      "value": "参考线"
+    },
+    {
+      "name": "ref_clinic",
+      "value": "诊室标准 140/90"
+    },
+    {
+      "name": "ref_home",
+      "value": "家庭自测 135/85"
+    },
+    {
+      "name": "range_today",
+      "value": "今天"
+    },
+    {
+      "name": "range_days",
+      "value": "%d 天"
+    },
+    {
+      "name": "share_chart_title",
+      "value": "血压趋势图"
+    },
+
+    {
+      "name": "metric_count",
+      "value": "测量次数"
+    },
+    {
+      "name": "metric_count_value",
+      "value": "%d 次"
+    },
+    {
+      "name": "metric_avg_bp",
+      "value": "平均血压"
+    },
+    {
+      "name": "metric_bp_value",
+      "value": "%d / %d mmHg"
+    },
+    {
+      "name": "metric_bp_value_only",
+      "value": "%d / %d"
+    },
+    {
+      "name": "metric_max",
+      "value": "最高值"
+    },
+    {
+      "name": "metric_min",
+      "value": "最低值"
+    },
+    {
+      "name": "metric_stddev",
+      "value": "标准差"
+    },
+    {
+      "name": "metric_hr",
+      "value": "平均心率"
+    },
+    {
+      "name": "metric_hr_value",
+      "value": "%d bpm"
+    },
+    {
+      "name": "metric_plain",
+      "value": "%s"
+    },
+    {
+      "name": "metric_placeholder",
+      "value": "—"
+    },
+    {
+      "name": "distribution_title",
+      "value": "分级分布"
+    },
+    {
+      "name": "surge_title",
+      "value": "晨起 / 全天对比"
+    },
+    {
+      "name": "surge_values",
+      "value": "晨起均值 %d/%d　全天均值 %d/%d"
+    },
+    {
+      "name": "surge_delta",
+      "value": "晨起与全天差值 %s / %s mmHg"
+    },
+    {
+      "name": "surge_no_data",
+      "value": "本期无晨起时段记录"
+    },
+    {
+      "name": "surge_note",
+      "value": "口径说明：晨起时段均值与全天均值之差，不等同于临床「血压晨峰」（晨峰需夜间最低血压，本 App 无法获取）。"
+    },
+    {
+      "name": "adherence_title",
+      "value": "服药依从率"
+    },
+    {
+      "name": "adherence_values",
+      "value": "已到期 %d 次　已服 %d 次"
+    },
+    {
+      "name": "adherence_rate",
+      "value": "依从率 %s　漏服 %d　跳过 %d"
+    },
+    {
+      "name": "adherence_pending_note",
+      "value": "另有 %d 次尚未到期，不计入依从率"
+    },
+    {
+      "name": "adherence_no_data",
+      "value": "本周期无服药记录"
+    },
+
+    {
+      "name": "export_bp_csv",
+      "value": "导出数据 CSV"
+    },
+    {
+      "name": "export_med_csv",
+      "value": "导出用药打卡 CSV"
+    },
+    {
+      "name": "export_pick_range",
+      "value": "选择导出范围"
+    },
+    {
+      "name": "sheet_msg_export_range",
+      "value": "请选择要导出的数据范围"
+    },
+    {
+      "name": "sheet_msg_report_period",
+      "value": "请选择要生成的报告周期"
+    },
+    {
+      "name": "sheet_msg_grade_standard",
+      "value": "选择图表主参考线与阈值文案所用的口径（不影响分级色标）"
+    },
+    {
+      "name": "sheet_msg_export",
+      "value": "请选择要导出的内容"
+    },
+    {
+      "name": "export_range_all",
+      "value": "全部"
+    },
+    {
+      "name": "export_range_30",
+      "value": "近 30 天"
+    },
+    {
+      "name": "export_range_90",
+      "value": "近 90 天"
+    },
+    {
+      "name": "toast_export_done",
+      "value": "已导出 %d 条记录"
+    },
+
+    {
+      "name": "csv_hdr_date",
+      "value": "日期"
+    },
+    {
+      "name": "csv_hdr_time",
+      "value": "时间"
+    },
+    {
+      "name": "csv_hdr_systolic",
+      "value": "收缩压(mmHg)"
+    },
+    {
+      "name": "csv_hdr_diastolic",
+      "value": "舒张压(mmHg)"
+    },
+    {
+      "name": "csv_hdr_heart_rate",
+      "value": "心率(bpm)"
+    },
+    {
+      "name": "csv_hdr_period",
+      "value": "时段"
+    },
+    {
+      "name": "csv_hdr_note",
+      "value": "备注"
+    },
+    {
+      "name": "csv_hdr_plan_time",
+      "value": "计划时间"
+    },
+    {
+      "name": "csv_hdr_med_name",
+      "value": "药品"
+    },
+    {
+      "name": "csv_hdr_dosage",
+      "value": "剂量"
+    },
+    {
+      "name": "csv_hdr_status",
+      "value": "状态"
+    },
+    {
+      "name": "csv_hdr_taken_time",
+      "value": "实际打卡时间"
+    },
+    {
+      "name": "csv_hdr_time_slots",
+      "value": "时间点"
+    },
+    {
+      "name": "csv_hdr_slot_count",
+      "value": "每日次数"
+    },
+    {
+      "name": "csv_hdr_start_date",
+      "value": "开始日期"
+    },
+    {
+      "name": "csv_hdr_end_date",
+      "value": "结束日期"
+    },
+    {
+      "name": "csv_status_taken",
+      "value": "已服用"
+    },
+    {
+      "name": "csv_status_taken_makeup",
+      "value": "已服用(补记)"
+    },
+    {
+      "name": "csv_status_skipped",
+      "value": "跳过"
+    },
+    {
+      "name": "csv_status_missed",
+      "value": "漏服"
+    },
+    {
+      "name": "csv_status_pending",
+      "value": "待服"
+    },
+    {
+      "name": "csv_slot_separator",
+      "value": ";"
+    },
+
+    {
+      "name": "import_type_bp",
+      "value": "血压记录"
+    },
+    {
+      "name": "import_type_med",
+      "value": "用药打卡"
+    },
+    {
+      "name": "import_type_plan",
+      "value": "用药计划"
+    },
+    {
+      "name": "export_plan_csv",
+      "value": "导出用药计划 CSV"
+    },
+    {
+      "name": "import_pick_file",
+      "value": "选择 CSV 文件"
+    },
+    {
+      "name": "import_selected",
+      "value": "已选：%s"
+    },
+    {
+      "name": "import_result_title",
+      "value": "解析结果"
+    },
+    {
+      "name": "import_total_rows",
+      "value": "数据行 %d 行"
+    },
+    {
+      "name": "import_valid",
+      "value": "有效 %d 条"
+    },
+    {
+      "name": "import_dup",
+      "value": "重复 %d 条（将跳过）"
+    },
+    {
+      "name": "import_error",
+      "value": "错误 %d 条（将跳过）"
+    },
+    {
+      "name": "import_preview_title",
+      "value": "前 5 行预览"
+    },
+    {
+      "name": "import_error_list",
+      "value": "错误明细"
+    },
+    {
+      "name": "import_line_no",
+      "value": "第 %d 行"
+    },
+    {
+      "name": "import_line_detail",
+      "value": "（%s）"
+    },
+    {
+      "name": "import_confirm",
+      "value": "确认导入"
+    },
+    {
+      "name": "import_done_title",
+      "value": "导入完成"
+    },
+    {
+      "name": "import_done_line",
+      "value": "成功 %d 条 / 跳过重复 %d 条 / 失败 %d 条"
+    },
+    {
+      "name": "import_created_meds",
+      "value": "已自动建档药品：%s"
+    },
+    {
+      "name": "import_created_meds_hint",
+      "value": "自动创建的档案默认为停用状态，且不会自动生成服药计划，请在用药管理中补充。"
+    },
+    {
+      "name": "import_hint",
+      "value": "导入按「测量时间 + 收缩压 + 舒张压」判重，重复行自动跳过；格式错误行逐行提示且不影响其它行入库。整个导入在一个事务内完成，失败不会产生半批数据。"
+    },
+
+    {
+      "name": "import_type_auto",
+      "value": "其他来源"
+    },
+    {
+      "name": "gen_hint",
+      "value": "用于导入其他 App、血压计软件或手写表格导出的 CSV：列名与列顺序可以不同，日期支持 2026-10-06 / 2026/10/6 / 2026年10月6日 / 20261006 等写法，血压可写成「收缩压、舒张压」两列也可写成「128/82」一列，数值单位为 kPa 时自动换算。"
+    },
+    {
+      "name": "gen_detected",
+      "value": "识别为：%s"
+    },
+    {
+      "name": "gen_detected_unknown",
+      "value": "未能自动识别列含义，请在下方指定每一列对应的数据项。"
+    },
+    {
+      "name": "gen_role_summary",
+      "value": "已识别 %d 项，仍缺少：%s"
+    },
+    {
+      "name": "gen_role_summary_ok",
+      "value": "必需的列都已识别，可直接确认导入。"
+    },
+    {
+      "name": "gen_mapping_title",
+      "value": "列对应关系（共 %d 列）"
+    },
+    {
+      "name": "gen_mapping_show",
+      "value": "调整列对应"
+    },
+    {
+      "name": "gen_mapping_hide",
+      "value": "收起列对应"
+    },
+    {
+      "name": "gen_mapping_none",
+      "value": "不使用该列"
+    },
+    {
+      "name": "gen_mapping_col",
+      "value": "第 %d 列：%s"
+    },
+    {
+      "name": "gen_mapping_col_empty",
+      "value": "第 %d 列（无表头）"
+    },
+    {
+      "name": "gen_mapping_col_sample",
+      "value": "示例 %s"
+    },
+    {
+      "name": "gen_unit_mmhg",
+      "value": "数值单位：mmHg"
+    },
+    {
+      "name": "gen_unit_kpa",
+      "value": "数值单位：kPa（已按 1 kPa ≈ 7.5 mmHg 换算为整数）"
+    },
+    {
+      "name": "gen_no_time_hint",
+      "value": "文件中没有时间列，导入后测量时间统一记为 00:00，可在记录中修改。"
+    },
+    {
+      "name": "gen_rounded_hint",
+      "value": "有 %d 条原始数值带小数，已四舍五入为整数。"
+    },
+    {
+      "name": "gen_header_switch",
+      "value": "首行是表头"
+    },
+    {
+      "name": "gen_target_kind",
+      "value": "导入为"
+    },
+    {
+      "name": "gen_plan_hint",
+      "value": "识别为用药计划，请改用上方「用药计划」类型导入。"
+    },
+    {
+      "name": "gen_fix_hint",
+      "value": "调整上方列对应后，下方的解析结果会立即重新计算。"
+    },
+    {
+      "name": "gen_check_hint",
+      "value": "确认前请核对上方预览的前几行；若某列识别有误，请用「调整列对应」修正。数据只会新增，不会覆盖或删除已有记录。"
+    },
+    {
+      "name": "err_imp_date_invalid",
+      "value": "日期无法识别（支持 2026-10-06 / 2026/10/6 / 2026年10月6日 / 20261006）"
+    },
+    {
+      "name": "err_imp_bp_invalid",
+      "value": "血压数值无法识别（需为整数，或「收缩压/舒张压」形式）"
+    },
+
+    {
+      "name": "imp_role_names",
+      "value": "日期时间|日期|时间|收缩压|舒张压|血压|心率|时段|备注|药品|剂量|状态|实际打卡时间|时间点|每日次数|开始日期|结束日期"
+    },
+    {
+      "name": "imp_alias_datetime",
+      "value": "日期时间|时间戳|datetime|timestamp|measuretime|recordtime"
+    },
+    {
+      "name": "imp_alias_date",
+      "value": "日期|测量日期|年月日|date|day"
+    },
+    {
+      "name": "imp_alias_time",
+      "value": "时间|时刻|测量时刻|time|clock"
+    },
+    {
+      "name": "imp_alias_systolic",
+      "value": "收缩压|高压|收缩|上压|最高压|最高血压|sys|sbp"
+    },
+    {
+      "name": "imp_alias_diastolic",
+      "value": "舒张压|低压|舒张|下压|最低压|最低血压|dia|dbp"
+    },
+    {
+      "name": "imp_alias_bp_pair",
+      "value": "血压|血压值|血压读数|测量值|读数|bp|bloodpressure"
+    },
+    {
+      "name": "imp_alias_heart_rate",
+      "value": "心率|脉率|脉搏|心率值|hr|bpm|heartrate|pulse"
+    },
+    {
+      "name": "imp_alias_period",
+      "value": "时段|时间段|测量时段|period"
+    },
+    {
+      "name": "imp_alias_note",
+      "value": "备注|说明|注释|备注说明|note|remark|comment"
+    },
+    {
+      "name": "imp_alias_med_name",
+      "value": "药品|药品名|药品名称|药物|药名|medication|medicine|drug"
+    },
+    {
+      "name": "imp_alias_dosage",
+      "value": "剂量|用量|每次剂量|单次剂量|dosage|dose"
+    },
+    {
+      "name": "imp_alias_status",
+      "value": "状态|打卡状态|服药状态|status"
+    },
+    {
+      "name": "imp_alias_taken_time",
+      "value": "实际打卡时间|打卡时间|实际时间|服药时间|takentime|actualtime|taken"
+    },
+    {
+      "name": "imp_alias_slots",
+      "value": "时间点|服药时间点|时点|slots|times|schedule"
+    },
+    {
+      "name": "imp_alias_day_count",
+      "value": "每日次数|每天次数|每日频次|次数|频次|timesperday"
+    },
+    {
+      "name": "imp_alias_start_date",
+      "value": "开始日期|起始日期|开始时间|startdate|start"
+    },
+    {
+      "name": "imp_alias_end_date",
+      "value": "结束日期|截止日期|终止日期|enddate|end"
+    },
+    {
+      "name": "imp_status_taken",
+      "value": "已服用|已服|已吃|已用|吃过|服用了|已完成|taken|done"
+    },
+    {
+      "name": "imp_status_skipped",
+      "value": "跳过|已跳过|略过|skip|skipped"
+    },
+    {
+      "name": "imp_status_missed",
+      "value": "漏服|未服用|未服|漏吃|missed|miss"
+    },
+    {
+      "name": "imp_status_pending",
+      "value": "待服|未到|待服用|pending|due"
+    },
+    {
+      "name": "imp_status_makeup",
+      "value": "补记|补录|补打卡|补登"
+    },
+
+    {
+      "name": "today_med_title",
+      "value": "今日服药"
+    },
+    {
+      "name": "today_med_progress",
+      "value": "%d/%d 已服"
+    },
+    {
+      "name": "today_med_empty",
+      "value": "今日无服药安排"
+    },
+    {
+      "name": "med_pill_icon",
+      "value": "💊"
+    },
+    {
+      "name": "med_status_pending",
+      "value": "待服"
+    },
+    {
+      "name": "med_status_taken",
+      "value": "已服"
+    },
+    {
+      "name": "med_status_skipped",
+      "value": "跳过"
+    },
+    {
+      "name": "med_status_missed",
+      "value": "漏服"
+    },
+    {
+      "name": "med_makeup_tag",
+      "value": "（补记）"
+    },
+    {
+      "name": "med_status_active",
+      "value": "生效中"
+    },
+    {
+      "name": "med_status_inactive",
+      "value": "已停用"
+    },
+    {
+      "name": "med_empty",
+      "value": "还没有药品档案，点击右上角「新增」开始添加"
+    },
+    {
+      "name": "med_no_plan",
+      "value": "未设置服药计划"
+    },
+    {
+      "name": "med_dosage_unknown",
+      "value": "未填写剂量"
+    },
+    {
+      "name": "med_per_day",
+      "value": "每日 %d 次"
+    },
+    {
+      "name": "med_long_term",
+      "value": "长期"
+    },
+    {
+      "name": "med_until",
+      "value": "至 %s"
+    },
+    {
+      "name": "med_plan_auto_expired",
+      "value": "计划已于 %s 到期，已自动停用"
+    },
+    {
+      "name": "med_archive",
+      "value": "停用"
+    },
+    {
+      "name": "med_archive_plan",
+      "value": "停用此计划"
+    },
+    {
+      "name": "med_archive_title",
+      "value": "停用确认"
+    },
+    {
+      "name": "med_archive_message",
+      "value": "停用后不再生成新的服药提醒与应服记录，历史打卡记录会完整保留。"
+    },
+    {
+      "name": "med_archive_confirm",
+      "value": "确认停用"
+    },
+    {
+      "name": "toast_med_saved",
+      "value": "用药计划已保存"
+    },
+    {
+      "name": "toast_med_archived",
+      "value": "已停用"
+    },
+
+    {
+      "name": "checkin_title",
+      "value": "%s 服药时间到"
+    },
+    {
+      "name": "checkin_title_makeup",
+      "value": "漏服补记"
+    },
+    {
+      "name": "checkin_seq",
+      "value": "今天第 %d 次"
+    },
+    {
+      "name": "checkin_take",
+      "value": "✔ 已服用"
+    },
+    {
+      "name": "checkin_skip",
+      "value": "跳 过"
+    },
+    {
+      "name": "checkin_hint",
+      "value": "已过计划时间可补记，补记将在统计中标注。"
+    },
+
+    {
+      "name": "reminder_title",
+      "value": "服药提醒"
+    },
+    {
+      "name": "reminder_expired",
+      "value": "本次服药提醒已过期"
+    },
+    {
+      "name": "reminder_snooze",
+      "value": "稍后提醒"
+    },
+    {
+      "name": "reminder_action_close",
+      "value": "知道了"
+    },
+    {
+      "name": "reminder_catchup_title",
+      "value": "服药提醒（补发）"
+    },
+    {
+      "name": "reminder_catchup_text",
+      "value": "今日有 %d 次服药未打卡，请在首页「今日服药」中补记。"
+    },
+    {
+      "name": "reminder_mode_agent",
+      "value": "代理提醒"
+    },
+    {
+      "name": "reminder_mode_notification",
+      "value": "本地通知"
+    },
+    {
+      "name": "reminder_mode_denied",
+      "value": "未授权"
+    },
+    {
+      "name": "reminder_fallback_hint",
+      "value": "当前使用本地通知：提醒只能在应用运行时送达；系统级代理提醒在当前设备上未启用。"
+    },
+    {
+      "name": "reminder_denied_hint",
+      "value": "通知权限未开启，提醒不会响：点上方「通知权限」授权后立即恢复。"
+    },
+    {
+      "name": "reminder_warn_title",
+      "value": "用药提醒当前不会响"
+    },
+    {
+      "name": "reminder_warn_text",
+      "value": "系统通知权限未开启，到点不会有任何提醒。点下方按钮授权后立即恢复。"
+    },
+    {
+      "name": "reminder_warn_action",
+      "value": "开启提醒"
+    },
+    {
+      "name": "reminder_warn_text_agent",
+      "value": "系统拒绝了本应用的提醒登记（代理提醒不可用），到点不会有任何提醒。点下方按钮重试登记。"
+    },
+    {
+      "name": "reminder_warn_action_retry",
+      "value": "重试登记"
+    },
+    {
+      "name": "toast_reminder_still_broken",
+      "value": "系统仍未接受提醒登记，提醒不会响"
+    },
+    {
+      "name": "toast_reminder_need_notification",
+      "value": "未获得通知权限，提醒不会响"
+    },
+    {
+      "name": "toast_reminder_fixed",
+      "value": "提醒已重新登记"
+    },
+    {
+      "name": "toast_notification_on",
+      "value": "通知已开启"
+    },
+    {
+      "name": "toast_notification_denied",
+      "value": "通知未授权，服药提醒将无法送达"
+    },
+
+    {
+      "name": "report_week",
+      "value": "周报"
+    },
+    {
+      "name": "report_month",
+      "value": "月报"
+    },
+    {
+      "name": "report_custom_range",
+      "value": "自定义周期"
+    },
+    {
+      "name": "report_pick_period",
+      "value": "选择报告周期"
+    },
+    {
+      "name": "report_range_invalid",
+      "value": "自定义周期不能超过 92 天"
+    },
+    {
+      "name": "report_title_week",
+      "value": "血压周报"
+    },
+    {
+      "name": "report_title_month",
+      "value": "血压月报"
+    },
+    {
+      "name": "report_title_custom",
+      "value": "血压报告"
+    },
+    {
+      "name": "report_no_data",
+      "value": "该周期暂无数据"
+    },
+    {
+      "name": "report_head_line",
+      "value": "测量 %d 次 · 依从率 %s"
+    },
+    {
+      "name": "report_head_line_no_adh",
+      "value": "测量 %d 次"
+    },
+    {
+      "name": "report_max_min",
+      "value": "最高 %d/%d　最低 %d/%d"
+    },
+    {
+      "name": "report_stddev",
+      "value": "标准差 %s / %s"
+    },
+    {
+      "name": "report_trend_title",
+      "value": "周期趋势"
+    },
+    {
+      "name": "report_compare_with",
+      "value": "较 %s"
+    },
+    {
+      "name": "report_compare_value",
+      "value": "%s / %s mmHg"
+    },
+    {
+      "name": "report_compare_none",
+      "value": "较上期 —"
+    },
+    {
+      "name": "report_abnormal_title",
+      "value": "异常记录（≥140/90）"
+    },
+    {
+      "name": "report_abnormal_none",
+      "value": "本周期无异常记录"
+    },
+    {
+      "name": "report_med_title",
+      "value": "用药小结"
+    },
+    {
+      "name": "report_med_line",
+      "value": "已到期 %d 次　已服 %d 次　漏服 %d 次　跳过 %d 次"
+    },
+    {
+      "name": "report_watermark_suffix",
+      "value": "由「血压助手」生成，仅供参考"
+    },
+    {
+      "name": "report_watermark_sep",
+      "value": "　·　"
+    },
+    {
+      "name": "toast_saved_album",
+      "value": "已保存到相册"
+    },
+
+    {
+      "name": "settings_reminder_mode",
+      "value": "服药提醒"
+    },
+    {
+      "name": "settings_notification",
+      "value": "通知权限"
+    },
+    {
+      "name": "settings_reminder_count",
+      "value": "已登记提醒"
+    },
+    {
+      "name": "settings_reminder_detail",
+      "value": "最近探测"
+    },
+    {
+      "name": "reminder_count_value",
+      "value": "%d 条"
+    },
+    {
+      "name": "settings_grade_standard",
+      "value": "参考口径"
+    },
+    {
+      "name": "settings_export",
+      "value": "导出数据"
+    },
+    {
+      "name": "settings_import",
+      "value": "导入数据"
+    },
+    {
+      "name": "settings_clear",
+      "value": "清空所有数据"
+    },
+    {
+      "name": "settings_disclaimer",
+      "value": "免责声明"
+    },
+    {
+      "name": "settings_about",
+      "value": "关于"
+    },
+    {
+      "name": "about_version",
+      "value": "版本"
+    },
+    {
+      "name": "about_version_value",
+      "value": "v%s"
+    },
+    {
+      "name": "state_enabled",
+      "value": "已开启"
+    },
+    {
+      "name": "state_disabled",
+      "value": "未开启"
+    },
+    {
+      "name": "toast_standard_changed",
+      "value": "参考口径已切换"
+    },
+
+    {
+      "name": "delete_confirm_title",
+      "value": "删除确认"
+    },
+    {
+      "name": "delete_confirm_message",
+      "value": "删除后不可恢复，确认删除这条记录吗？"
+    },
+    {
+      "name": "clear_data_title",
+      "value": "清空所有数据"
+    },
+    {
+      "name": "clear_data_message",
+      "value": "将清空全部血压记录与用药数据（含药品档案、服药计划、打卡记录），操作不可恢复，数据库将恢复为空。建议先导出 CSV 备份。"
+    },
+    {
+      "name": "clear_data_hint",
+      "value": "请输入下方文字以确认：确认"
+    },
+    {
+      "name": "clear_confirm_keyword",
+      "value": "确认"
+    },
+    {
+      "name": "clear_data_placeholder",
+      "value": "请在此输入"
+    },
+    {
+      "name": "clear_data_confirm",
+      "value": "清空"
+    },
+    {
+      "name": "toast_cleared",
+      "value": "数据已清空"
+    }
+  ]
+}

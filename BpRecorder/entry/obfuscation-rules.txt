@@ -1,0 +1,14 @@
+# 代码混淆规则（entry 模块）
+#
+# 本工程 Release 构建**未开启混淆**（见 entry/build-profile.json5 中
+# buildOptionSet[release].arkOptions.obfuscation.ruleOptions.enable = false）。
+# 因此本文件当前为空占位，仅保证构建配置引用的文件存在。
+#
+# 若将来开启混淆，可参考 ArkTS 官方混淆配置，例如：
+#   -enable-property-obfuscation
+#   -enable-toplevel-obfuscation
+#   -keep-property-name
+#   -keep-file-name
+#
+# 注意：本项目为单机自用应用，无对外 SDK/反射调用，开启混淆前请先用
+# tools/parity/run.mjs 与 tools/check-api-usage.mjs 复验，再上真机跑一遍全功能。

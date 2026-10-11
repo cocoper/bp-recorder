@@ -1,0 +1,62 @@
+/*
+ * 本文件是 build-profile.json5 的**脱敏模板**：仓库里不保存真实签名口令与密钥库路径。
+ * 用法：复制为 build-profile.json5，填上本机 DevEco 生成的签名信息；
+ *      或直接在 DevEco Studio 里用 File > Project Structure > Signing Configs 勾选 Automatically generate signature，
+ *      它会就地重写 build-profile.json5（该文件已被 .gitignore 排除，不会入库）。
+ */
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/path/to/your.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "<fill-in-or-use-DevEco-auto-signing>",
+          "profile": "/path/to/your.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/path/to/your.p12",
+          "storePassword": "<fill-in-or-use-DevEco-auto-signing>"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "26.0.0",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        },
+        "targetSdkVersion": "26.0.0"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

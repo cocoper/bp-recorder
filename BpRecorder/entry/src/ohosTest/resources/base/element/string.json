@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_test_desc",
+      "value": "血压助手测试模块"
+    },
+    {
+      "name": "TestAbility_desc",
+      "value": "测试入口"
+    },
+    {
+      "name": "TestAbility_label",
+      "value": "血压助手测试"
+    }
+  ]
+}
