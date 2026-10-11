@@ -793,6 +793,14 @@
       "value": "时间戳(毫秒)"
     },
     {
+      "name": "csv_hdr_plan_ts",
+      "value": "计划时间戳(毫秒)"
+    },
+    {
+      "name": "csv_hdr_taken_ts",
+      "value": "打卡时间戳(毫秒)"
+    },
+    {
       "name": "csv_hdr_plan_time",
       "value": "计划时间"
     },

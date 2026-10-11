@@ -56,6 +56,10 @@ export interface MedImportPreview {
   errors: ImportIssue[];
   previewLines: string[];
   totalRows: number;
+  /** 旧格式推断出打卡时间的行数（只有 HH:mm，无法还原跨日补记） */
+  legacyTakenRows?: number;
+  /** 旧格式标了「补记」却没有时间的行数：时间未知，不伪造 */
+  unknownTakenRows?: number;
 }
 
 /** 用药计划导入预览（v1.3 审查意见 P1-9） */
@@ -309,6 +313,10 @@ export class ImportService {
     const previewLines: string[] = [];
     const seen: Set<string> = new Set<string>();
     let duplicateCount: number = 0;
+    /** 旧格式推断出的打卡时间行数（只有 HH:mm，无法还原跨日补记） */
+    let legacyTakenRows: number = 0;
+    /** 旧格式标了「补记」却没有时间的行数：时间未知，不伪造 */
+    let unknownTakenRows: number = 0;
 
     let start: number = 0;
     if (data.length > 0 && ImportService.headerMatches(data[0], vocab.medHeaders)) {
@@ -331,7 +339,20 @@ export class ImportService {
 
       const dateStr: string = Csv.cell(row, 0);
       const planTimeStr: string = Csv.cell(row, 1);
-      const scheduledTime: number | null = DateUtils.parseDateTime(dateStr, planTimeStr);
+      // 审查 R09：新版文件末尾两列是完整的计划/打卡毫秒时间戳，优先采信（不参与「猜次日」修正）
+      const hasExact: boolean = row.length > 7;
+      const planTsText: string = hasExact ? Csv.cell(row, 7) : '';
+      const takenTsText: string = hasExact ? Csv.cell(row, 8) : '';
+      let scheduledTime: number | null = null;
+      if (planTsText.length > 0) {
+        const exactPlan: number = Number.parseInt(planTsText, 10);
+        if (!Number.isNaN(exactPlan) && exactPlan > 1000000000000) {
+          scheduledTime = exactPlan;
+        }
+      }
+      if (scheduledTime === null) {
+        scheduledTime = DateUtils.parseDateTime(dateStr, planTimeStr);
+      }
       if (scheduledTime === null) {
         errors.push({
           lineNo: lineNo,
@@ -357,16 +378,28 @@ export class ImportService {
       // 实际打卡时间：留空时按状态推导，保证「补记」语义不丢失
       let takenTime: number | null = null;
       const takenText: string = Csv.cell(row, 5);
-      if (takenText.length > 0) {
+      if (takenTsText.length > 0) {
+        // 新版：直接用完整打卡时间戳（含跨多日的补记），不做任何「猜次日」修正
+        const exactTaken: number = Number.parseInt(takenTsText, 10);
+        if (!Number.isNaN(exactTaken) && exactTaken > 1000000000000) {
+          takenTime = exactTaken;
+        }
+      }
+      if (takenTime === null && takenText.length > 0) {
         const parsed: number | null = DateUtils.parseDateTime(dateStr, takenText);
         if (parsed === null) {
           errors.push({ lineNo: lineNo, reason: $r('app.string.err_imp_taken_time_invalid'), detail: takenText });
           continue;
         }
+        // 旧格式只有 HH:mm：只能按「不早于计划时间」推测，并如实计数（审查 R09.5）
         takenTime = ImportService.adjustTakenTime(scheduledTime, parsed);
-      } else if (statusText === vocab.statusTakenMakeup) {
-        // 文件中标注「补记」但未给时间：取宽限期后 1ms，使补记判定在库内仍然成立
-        takenTime = scheduledTime + MedLimits.MISS_GRACE_MS + 1;
+        if (!hasExact) {
+          legacyTakenRows++;
+        }
+      } else if (takenTime === null && statusText === vocab.statusTakenMakeup) {
+        // 旧文件只写「补记」却没有时间：**不再伪造** scheduled+2h+1ms 当真实服药时刻，
+        // 明确记为「时间未知」（审查 R09.4）
+        unknownTakenRows++;
       }
 
       const dosage: string = Csv.cell(row, 3);
@@ -403,7 +436,9 @@ export class ImportService {
       duplicateCount: duplicateCount,
       errors: errors,
       previewLines: previewLines,
-      totalRows: totalRows
+      totalRows: totalRows,
+      legacyTakenRows: legacyTakenRows,
+      unknownTakenRows: unknownTakenRows
     };
   }
 

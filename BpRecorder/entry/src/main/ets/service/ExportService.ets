@@ -92,7 +92,10 @@ export class ExportService {
         log.dosage,
         ExportService.medStatusText(log, vocab),
         taken === null || taken === undefined ? '' : DateUtils.formatTime(taken),
-        log.note === null || log.note === undefined ? '' : log.note
+        log.note === null || log.note === undefined ? '' : log.note,
+        // 审查 R09：完整 scheduled_time 与可空 taken_time（毫秒），避免补记时间被降级成「当天 HH:mm」
+        `${log.scheduledTime}`,
+        taken === null || taken === undefined ? '' : `${taken}`
       ]);
     }
     return Csv.stringify(rows, true);

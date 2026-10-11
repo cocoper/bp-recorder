@@ -324,7 +324,10 @@ export class CsvHeaderRes {
     $r('app.string.csv_hdr_dosage'),
     $r('app.string.csv_hdr_status'),
     $r('app.string.csv_hdr_taken_time'),
-    $r('app.string.csv_hdr_note')
+    $r('app.string.csv_hdr_note'),
+    // v1.20（审查 R09）：精确时间列 —— 计划/打卡的完整毫秒时间戳，保证补记时间与标记无损往返
+    $r('app.string.csv_hdr_plan_ts'),
+    $r('app.string.csv_hdr_taken_ts')
   ];
 
   /**

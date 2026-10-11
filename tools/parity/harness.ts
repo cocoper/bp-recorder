@@ -1453,6 +1453,36 @@ async function reviewScenarios(): Promise<void> {
     eq(legacyRows, 1, 'R08 旧格式行被标记为「仅分钟精度」，如实告知而不是假装精确');
   }
 
+  group('审查反例 R09（用药打卡时间无损往返）');
+  {
+    const sched: number = ts(2026, 10, 11, 8, 0);
+    const taken: number = ts(2026, 10, 13, 9, 15) + 3025; // 隔两日补记 09:15:03.025
+    const log1: MedLog = mlog(sched, MedLogStatus.TAKEN, taken, 1);
+    const csv: string = ExportService.buildMedCsv([log1], VOCAB);
+    const pv = ImportService.parseMedTable(Csv.parse(csv), VOCAB, new Set<string>(), new Map<string, number>());
+    eq(pv.drafts.length, 1, 'R09-a 补记记录可导入');
+    eq(pv.drafts[0].takenTime, taken, 'R09-a 跨两日的补记时间精确往返（不再变成当天）');
+
+    const justOver: number = sched + 2 * 60 * 60 * 1000 + 1; // 刚好超过宽限期 1ms
+    const log2: MedLog = mlog(sched, MedLogStatus.TAKEN, justOver, 2);
+    const pv2 = ImportService.parseMedTable(
+      Csv.parse(ExportService.buildMedCsv([log2], VOCAB)), VOCAB, new Set<string>(), new Map<string, number>());
+    const back: MedLog = {
+      id: 2, medicationId: 1, medName: '测试药1', dosage: '1片', scheduledTime: pv2.drafts[0].scheduledTime,
+      takenTime: pv2.drafts[0].takenTime === undefined ? null : pv2.drafts[0].takenTime,
+      status: MedLogStatus.TAKEN, note: null, createdAt: 0, updatedAt: 0
+    };
+    ok(MedService.isMakeUp(back), 'R09-b 刚超宽限期 1 毫秒的补记往返后仍是补记');
+
+    // 旧格式只写「补记」却没有时间：时间保持未知，不伪造 +2h+1ms
+    const legacy: string = `${VOCAB.medHeaders.slice(0, 7).join(',')}\n` +
+      `2026-10-11,08:00,测试药1,1片,${VOCAB.statusTakenMakeup},,`;
+    const legacyPv = ImportService.parseMedTable(Csv.parse(legacy), VOCAB, new Set<string>(), new Map<string, number>());
+    const unknownRows: number = legacyPv.unknownTakenRows === undefined ? 0 : legacyPv.unknownTakenRows;
+    eq(unknownRows, 1, 'R09 旧格式「补记但无时间」被标记为时间未知');
+    eq(legacyPv.drafts[0].takenTime, null, 'R09 不再伪造 +2h+1ms 当真实服药时刻');
+  }
+
   group('审查反例 R17（测试实例隔离）');
   {
     let prefixRejected = false;
