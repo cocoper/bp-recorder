@@ -85,8 +85,12 @@ for (const p of walk(join(appScopeRes, 'base', 'media'), () => true)) {
 // json5 中的 $string / $color / $media（module.json5 / app.json5）
 // 另需扫 resources/*/media/*.json —— 分层图标 layered_image.json 就是用
 // "$media:background" / "$media:foreground" 引用两层图的，漏扫会把这两张图误报成死资源。
+// 还需扫 resources/*/profile/*.json —— 卡片 form_config.json 用 "$string:xxx" 声明展示名与描述，
+// 漏扫会把它们误报成「已定义但未使用」。
 const refSources = walk(join(ROOT), (p) =>
-  (p.endsWith('.json5') || /[/\\]media[/\\][^/\\]+\.json$/.test(p)) && !p.includes('/build/'));
+  (p.endsWith('.json5')
+    || /[/\\]media[/\\][^/\\]+\.json$/.test(p)
+    || /[/\\]profile[/\\][^/\\]+\.json$/.test(p)) && !p.includes('/build/'));
 for (const f of refSources) {
   const text = readFileSync(f, 'utf8');
   let m;

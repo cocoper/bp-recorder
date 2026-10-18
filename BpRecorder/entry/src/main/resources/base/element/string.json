@@ -1,6 +1,18 @@
 {
   "string": [
     {
+      "name": "card_entry_desc",
+      "value": "桌面卡片：今日用药"
+    },
+    {
+      "name": "card_med_today_desc",
+      "value": "显示今天每次用药的完成情况与下一次时间"
+    },
+    {
+      "name": "card_med_today_name",
+      "value": "今日用药"
+    },
+    {
       "name": "module_desc",
       "value": "血压助手主模块"
     },

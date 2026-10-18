@@ -11,6 +11,7 @@ import { BpValidator } from './src/service/BpValidator';
 import { ExportService } from './src/service/ExportService';
 import { ImportService, MedImportDraft , PlanImportPreview } from './src/service/ImportService';
 import { ReportService } from './src/service/ReportService';
+import { TodayCardBinding, TodayCardBuilder, TodayCardData } from './src/service/TodayCardBuilder';
 import { CsvVocab, ImportVocab } from './src/common/Vocab';
 import { CheckInAction, GradeLevel, GradeStandard, MedLogStatus, Period } from './src/model/Types';
 import { PrefKeys, RefBasis, ImportAliasRes, ImportKind, ImportUnit, MedLimits , DbConst } from './src/common/Constants';
@@ -2256,6 +2257,53 @@ async function reviewScenarios(): Promise<void> {
       nestedTxRejected = true;
     }
     eq(nestedTxRejected, true, '嵌套事务被拒绝（要求把 TxSession 传下去）');
+  }
+
+  group('桌面卡片：今日用药数据口径');
+  {
+    const cardNow: number = ts(2026, 10, 11, 20, 0);
+    const empty: TodayCardData = TodayCardBuilder.build([], cardNow);
+    eq(empty.hasPlan, false, '卡片：没有安排时 hasPlan=false');
+    eq(empty.headline, '无安排', '卡片：无安排文案');
+    eq(empty.tone, 'idle', '卡片：无安排用 idle 语气');
+    eq(empty.rows.length, 0, '卡片：无安排不出明细行');
+
+    const takenLog: MedLog = mlog(ts(2026, 10, 11, 8, 0), MedLogStatus.TAKEN, ts(2026, 10, 11, 8, 5), 1);
+    const pendingLog: MedLog = mlog(ts(2026, 10, 11, 21, 0), MedLogStatus.PENDING, null, 2);
+    const partial: TodayCardData = TodayCardBuilder.build([takenLog, pendingLog], cardNow);
+    eq(partial.total, 2, '卡片：应服 2 次');
+    eq(partial.taken, 1, '卡片：已服 1 次');
+    eq(partial.pending, 1, '卡片：待服 1 次');
+    eq(partial.headline, '1/2', '卡片：标题显示进度');
+    eq(partial.subline, '下一次 21:00', '卡片：副标题给出下一次时间');
+    eq(partial.tone, 'next', '卡片：还有待服用 next 语气');
+    eq(partial.rows.length, 2, '卡片：明细行数随记录数');
+
+    const bothTaken: TodayCardData = TodayCardBuilder.build([
+      takenLog, mlog(ts(2026, 10, 11, 21, 0), MedLogStatus.TAKEN, ts(2026, 10, 11, 21, 2), 3)
+    ], cardNow);
+    eq(bothTaken.headline, '全部完成', '卡片：全部服完的文案');
+    eq(bothTaken.tone, 'done', '卡片：全部服完用 done 语气');
+
+    // 已过时间仍为 pending → 视为漏服（与 App 内口径一致）
+    const overdueLog: MedLog = mlog(ts(2026, 10, 11, 8, 0), MedLogStatus.PENDING, null, 4);
+    // 漏服判定带宽限期（MISS_GRACE_MS）：过了宽限期才算漏服，这里取 +6h 确保越线
+    const missedCard: TodayCardData = TodayCardBuilder.build([overdueLog], ts(2026, 10, 11, 14, 0));
+    eq(missedCard.missed, 1, '卡片：过点未服计入漏服');
+    eq(missedCard.tone, 'missed', '卡片：有漏服用 missed 语气（醒目）');
+    ok(missedCard.subline.indexOf('已漏') >= 0, '卡片：漏服文案明确');
+
+    // 明细最多 3 行，绑定字段扁平化
+    const many: MedLog[] = [];
+    for (let i = 0; i < 5; i++) {
+      many.push(mlog(ts(2026, 10, 11, 6 + i, 0), MedLogStatus.PENDING, null, 10 + i));
+    }
+    const manyCard: TodayCardData = TodayCardBuilder.build(many, ts(2026, 10, 11, 5, 0));
+    eq(manyCard.rows.length, 3, '卡片：明细最多 3 行（大卡也放得下）');
+    const binding: TodayCardBinding = TodayCardBuilder.toBinding(manyCard);
+    eq(binding.rowCount, 3, '卡片：绑定字段带行数');
+    eq(binding.showRows, 0, '卡片：默认不展示明细（由尺寸决定）');
+    eq(binding.rowsText.split('\n').length, 3, '卡片：明细文本 3 行');
   }
 
   group('审查反例 R17（测试实例隔离）');

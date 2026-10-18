@@ -160,6 +160,8 @@ export class PrefKeys {
   static readonly CATCHUP_DATE: string = 'catchup_notify_date';
   /** 是否已为「有生效计划但通知未开」主动请求过一次通知授权（v1.14，每次安装至多一次） */
   static readonly NOTIFY_ASKED: string = 'notify_asked';
+  /** 桌面卡片的 formId 列表（JSON 数组字符串）：卡片增删时维护，用于 App 内改动后推送刷新 */
+  static readonly FORM_IDS: string = 'card_form_ids';
 }
 
 /** 通知与提醒常量 */

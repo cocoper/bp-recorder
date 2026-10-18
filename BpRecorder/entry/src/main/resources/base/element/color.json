@@ -4,7 +4,6 @@
       "name": "start_window_background",
       "value": "#FFFFFF"
     },
-
     {
       "name": "page_bg",
       "value": "#F2F3F5"
@@ -25,7 +24,6 @@
       "name": "divider",
       "value": "#EDEFF2"
     },
-
     {
       "name": "text_primary",
       "value": "#1A1A1A"
@@ -42,7 +40,6 @@
       "name": "text_disabled",
       "value": "#C0C4C8"
     },
-
     {
       "name": "primary",
       "value": "#2F6FED"
@@ -87,7 +84,6 @@
       "name": "bar_track",
       "value": "#EFF1F4"
     },
-
     {
       "name": "warn_bg",
       "value": "#FFF3E0"
@@ -100,7 +96,6 @@
       "name": "warn_text_secondary",
       "value": "#A9762A"
     },
-
     {
       "name": "grade_normal",
       "value": "#22A06B"
@@ -133,7 +128,6 @@
       "name": "severe_divider",
       "value": "#C9455A"
     },
-
     {
       "name": "med_pending",
       "value": "#2F6FED"
@@ -154,7 +148,6 @@
       "name": "med_makeup",
       "value": "#E0A200"
     },
-
     {
       "name": "print_bg",
       "value": "#FFFFFF"
@@ -274,6 +267,42 @@
     {
       "name": "chart_gauge_pointer",
       "value": "#FFFFFF"
+    },
+    {
+      "name": "card_bg",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "card_text",
+      "value": "#0F172A"
+    },
+    {
+      "name": "card_text_dim",
+      "value": "#64748B"
+    },
+    {
+      "name": "card_bar_track",
+      "value": "#E2E8F0"
+    },
+    {
+      "name": "card_tone_done",
+      "value": "#16A34A"
+    },
+    {
+      "name": "card_tone_next",
+      "value": "#D97706"
+    },
+    {
+      "name": "card_tone_missed",
+      "value": "#DC2626"
+    },
+    {
+      "name": "card_tone_idle",
+      "value": "#64748B"
+    },
+    {
+      "name": "card_border",
+      "value": "#E8EBF0"
     }
   ]
 }

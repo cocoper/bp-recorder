@@ -9,6 +9,7 @@ import { Medication, MedListRow, MedPlan , ReminderSyncResult } from '../model/M
 import { BpDatabase } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
+import { TodayCardService } from '../service/TodayCardService';
 
 const TAG: string = 'MedPage';
 
@@ -186,6 +187,7 @@ struct MedPage {
       // 已归档药品的提醒会一直留在系统里）。
       const result: ReminderSyncResult = await ReminderService.syncFromDatabase(this.context(), db,
         VocabFactory.reminder(this.context()), DateUtils.now());
+      await TodayCardService.refreshAll(this.context());
       Logger.info(TAG, `archived med=${row.medication.id}, reminder status=${result.status}, registered=${result.registered}/${result.expected}`);
       this.toast($r('app.string.toast_med_archived'));
       await this.load();

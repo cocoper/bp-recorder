@@ -11,6 +11,7 @@ import { TodayMedLine } from '../model/Med';
 import { CheckInAction, MedLogStatus } from '../model/Types';
 import { BpDatabase } from '../service/BpDatabase';
 import { MedLifecycleService } from '../service/MedLifecycleService';
+import { TodayCardService } from '../service/TodayCardService';
 import { MedService } from '../service/MedService';
 import { StatsService, MeanPair } from '../service/StatsService';
 import { MedCheckInDialog } from '../components/MedCheckInDialog';
@@ -315,6 +316,8 @@ struct Index {
     try {
       await BpDatabase.getInstance().updateMedLogStatus(line.logId, status, takenTime, line.medName);
       await this.loadToday(now);
+      // 打卡后推送桌面卡片（失败只记日志，不影响打卡）
+      await TodayCardService.refreshAll(this.context());
     } catch (err) {
       const e = err as BusinessError;
       Logger.error(TAG, `check-in failed: code=${e.code}, message=${e.message}`);

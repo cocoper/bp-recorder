@@ -211,6 +211,28 @@ export namespace hilog {
 `,
     js: `exports.hilog = { debug(){}, info(){}, warn(){}, error(){}, isLoggable(){ return false; } };`
   },
+  '@kit.FormKit': {
+    dts: `
+export namespace formBindingData {
+  export interface FormBindingData { data: string }
+  export function createFormBindingData(obj?: Object): FormBindingData;
+}
+export namespace formProvider {
+  export function updateForm(formId: string, formBindingData: formBindingData.FormBindingData): Promise<void>;
+}
+export namespace formInfo {
+  export enum FormParam {
+    IDENTITY_KEY = 'ohos.extra.param.key.form_identity',
+    DIMENSION_KEY = 'ohos.extra.param.key.form_dimension',
+    NAME_KEY = 'ohos.extra.param.key.form_name',
+    TEMPORARY_KEY = 'ohos.extra.param.key.form_temporary'
+  }
+}
+`,
+    js: `exports.formBindingData = { createFormBindingData: (o) => ({ data: JSON.stringify(o ?? {}) }) };
+exports.formProvider = { updateForm: async () => {} };
+exports.formInfo = { FormParam: { IDENTITY_KEY: 'ohos.extra.param.key.form_identity', DIMENSION_KEY: 'ohos.extra.param.key.form_dimension', NAME_KEY: 'ohos.extra.param.key.form_name', TEMPORARY_KEY: 'ohos.extra.param.key.form_temporary' } };`
+  },
   '@kit.CoreFileKit': {
     dts: `
 export namespace fileIo {

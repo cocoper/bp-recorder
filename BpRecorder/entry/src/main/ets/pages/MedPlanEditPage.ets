@@ -9,6 +9,7 @@ import { Medication, MedicationDraft, MedPlan, MedPlanDraft , ReminderSyncResult
 import { SavedMedicationPlan, BpDatabase, SaveMedicationPlanResult, TxSession } from '../service/BpDatabase';
 import { MedService } from '../service/MedService';
 import { ReminderService } from '../service/ReminderService';
+import { TodayCardService } from '../service/TodayCardService';
 import { LabeledInput } from '../components/LabeledInput';
 import { ResUtils } from '../common/ResUtils';
 
@@ -228,6 +229,8 @@ struct MedPlanEditPage {
       const plans: MedPlan[] = await db.queryActivePlans();
       const meds: Medication[] = await db.queryMedications();
       await ReminderService.rebuildAll(this.context(), plans, meds, VocabFactory.reminder(this.context()), now, true);
+      // 计划/档案变更后推送桌面卡片
+      await TodayCardService.refreshAll(this.context());
 
       if (this.slots.length > 0 && !notifyGranted) {
         this.toast($r('app.string.toast_reminder_need_notification'));

@@ -32,6 +32,23 @@
         ]
       }
     ],
+    // 桌面卡片（今日用药）：FormExtensionAbility + $profile:form_config 声明 2*2 / 4*2 两种尺寸
+    "extensionAbilities": [
+      {
+        "name": "EntryFormAbility",
+        "srcEntry": "./ets/form/EntryFormAbility.ets",
+        "label": "$string:EntryAbility_label",
+        "description": "$string:card_entry_desc",
+        "type": "form",
+        "exported": true,
+        "metadata": [
+          {
+            "name": "ohos.extension.form",
+            "resource": "$profile:form_config"
+          }
+        ]
+      }
+    ],
     // NFR-5：不申请任何网络权限（无 ohos.permission.INTERNET）
     // 说明：策划文档 §4.1 写作 ohos.permission.REMINDER_AGENT，该名称在 API 12 不存在；
     //      真实权限名为 ohos.permission.PUBLISH_AGENT_REMINDER，在此按真实名称声明。
