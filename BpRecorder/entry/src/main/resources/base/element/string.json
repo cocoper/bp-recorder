@@ -6,7 +6,7 @@
     },
     {
       "name": "card_med_today_desc",
-      "value": "长条卡片：今天的整体完成情况 + 每一次用药的时间、药品与状态"
+      "value": "2*2 显示整体进度；2*4 竖版另列今天每一次用药的时间、药品与状态"
     },
     {
       "name": "card_med_today_name",

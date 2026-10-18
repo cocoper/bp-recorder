@@ -72,8 +72,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
     if (Number.isNaN(dim)) {
       return false;
     }
-    // 本卡片只声明了 2*2 与 4*4：4*4 才算大卡，其余一律按小卡处理（信息更克制）
-    return dim === formInfo.FormDimension.Dimension_4_4;
+    // 本卡片声明 2*2 与 2*4：2*4（竖长条）才展示分次明细，2*2 保持克制
+    return dim === formInfo.FormDimension.Dimension_2_4;
   }
 
   /** 从 want 里取卡片实例 id（不同 API 版本字段位置一致，取不到则用空串兜底） */
@@ -89,8 +89,7 @@ export default class EntryFormAbility extends FormExtensionAbility {
   /** 绑定字段：在基础字段上补 showRows（大卡才展示分次明细） */
   static bindingOf(data: TodayCardData, big: boolean): TodayCardBinding {
     const base: TodayCardBinding = TodayCardBuilder.toBinding(data);
-    // 本卡片只声明了 6*4 长条形：始终展示明细
-    base.showRows = 1;
+    base.showRows = big ? 1 : 0;
     return base;
   }
 

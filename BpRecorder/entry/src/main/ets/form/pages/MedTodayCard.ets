@@ -1,7 +1,7 @@
-/** 桌面卡片「今日用药」——长条（6*4）：左侧整体进度，右侧每一次用药明细 */
+/** 桌面卡片「今日用药」：2*2 看整体；2*4 竖版额外列出今天每一次用药 */
 let storage: LocalStorage = new LocalStorage();
 
-/** 明细行（与 TodayCardRow 一致，卡片侧自行解析） */
+/** 明细行（与 TodayCardRow 对齐，卡片侧自行解析） */
 interface CardRow {
   time: string;
   name: string;
@@ -21,6 +21,8 @@ struct MedTodayCard {
   @LocalStorageProp('dateLabel') dateLabel: string = '';
   @LocalStorageProp('rowsJson') rowsJson: string = '[]';
   @LocalStorageProp('rowCount') rowCount: number = 0;
+  /** 1 = 2*4 竖版（展示分次明细） */
+  @LocalStorageProp('showRows') showRows: number = 0;
 
   private accent(): Resource {
     if (this.tone === 'missed') {
@@ -66,7 +68,7 @@ struct MedTodayCard {
 
   build() {
     Column() {
-      // 顶部：状态点 + 标题 + 日期/刷新时间
+      // 顶部：状态点 + 标题 + 刷新时间
       Row() {
         Row()
           .width(8)
@@ -74,54 +76,45 @@ struct MedTodayCard {
           .borderRadius(4)
           .backgroundColor(this.accent())
         Text('今日用药')
-          .fontSize(14)
+          .fontSize(13)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.card_text'))
           .margin({ left: 7 })
         Blank()
-        Text(`${this.dateLabel}  ${this.updatedAt}`)
+        Text(this.updatedAt)
           .fontSize(11)
           .fontColor($r('app.color.card_text_dim'))
       }
       .width('100%')
 
-      Row() {
-        // 左：整体进度
-        Column() {
-          Text(this.headline)
-            .width('100%')
-            .fontSize(34)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.accent())
-            .maxLines(2)
-          Text(this.subline)
-            .width('100%')
-            .fontSize(12)
-            .fontColor($r('app.color.card_text_dim'))
-            .margin({ top: 2 })
-            .maxLines(2)
-
-          Row()
-            .width('100%')
-            .layoutWeight(1)
-
-          Row() {
-            Row()
-              .width(this.percent())
-              .height('100%')
-              .borderRadius(4)
-              .backgroundColor(this.accent())
-          }
+      if (this.showRows === 1) {
+        Text(this.dateLabel)
+          .fontSize(11)
+          .fontColor($r('app.color.card_text_dim'))
           .width('100%')
-          .height(8)
-          .borderRadius(4)
-          .backgroundColor($r('app.color.card_bar_track'))
-        }
-        .layoutWeight(4)
-        .alignItems(HorizontalAlign.Start)
-        .height('100%')
+          .margin({ top: 6 })
+      } else {
+        Row()
+          .width('100%')
+          .layoutWeight(1)
+      }
 
-        // 右：每一次用药明细（时间 · 药品 · 状态）
+      // 大号状态
+      Text(this.headline)
+        .width('100%')
+        .fontSize(this.showRows === 1 ? 40 : 34)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.accent())
+        .maxLines(2)
+      Text(this.subline)
+        .width('100%')
+        .fontSize(12)
+        .fontColor($r('app.color.card_text_dim'))
+        .margin({ top: 3 })
+        .maxLines(2)
+
+      // 2*4 竖版：今天每一次用药（时间 · 药品 · 状态）
+      if (this.showRows === 1) {
         Column() {
           if (this.rowCount === 0) {
             Text('今天没有用药安排')
@@ -152,22 +145,35 @@ struct MedTodayCard {
                 .fontColor(this.rowColor(row.status))
             }
             .width('100%')
-            .margin({ top: 3 })
+            .margin({ top: 4 })
           }, (row: CardRow) => `${row.time}_${row.name}_${row.status}`)
         }
-        .layoutWeight(5)
+        .width('100%')
         .alignItems(HorizontalAlign.Start)
-        .height('100%')
-        .margin({ left: 14 })
+        .layoutWeight(1)
+        .margin({ top: 8 })
+      } else {
+        Row()
+          .width('100%')
+          .layoutWeight(1)
+      }
+
+      // 进度条
+      Row() {
+        Row()
+          .width(this.percent())
+          .height('100%')
+          .borderRadius(4)
+          .backgroundColor(this.accent())
       }
       .width('100%')
-      .layoutWeight(1)
-      .alignItems(VerticalAlign.Top)
-      .margin({ top: 10 })
+      .height(8)
+      .borderRadius(4)
+      .backgroundColor($r('app.color.card_bar_track'))
     }
     .width('100%')
     .height('100%')
-    .padding(18)
+    .padding(16)
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Start)
     .borderRadius(22)
