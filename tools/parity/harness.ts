@@ -2282,7 +2282,7 @@ async function reviewScenarios(): Promise<void> {
     const bothTaken: TodayCardData = TodayCardBuilder.build([
       takenLog, mlog(ts(2026, 10, 11, 21, 0), MedLogStatus.TAKEN, ts(2026, 10, 11, 21, 2), 3)
     ], cardNow);
-    eq(bothTaken.headline, '全部完成', '卡片：全部服完的文案');
+    eq(bothTaken.headline, '已完成', '卡片：全部服完的文案（3 字，单行放得下）');
     eq(bothTaken.tone, 'done', '卡片：全部服完用 done 语气');
 
     // 已过时间仍为 pending → 视为漏服（与 App 内口径一致）

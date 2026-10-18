@@ -8,7 +8,7 @@
       "uiSyntax": "arkts",
       "window": {
         "designWidth": 720,
-        "autoDesignWidth": true
+        "autoDesignWidth": false
       },
       "colorMode": "auto",
       "isDynamic": true,

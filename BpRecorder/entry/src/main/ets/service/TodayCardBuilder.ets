@@ -112,7 +112,7 @@ export class TodayCardBuilder {
       subline = `已漏 ${missed} 次，尽快处理`;
       tone = 'missed';
     } else if (taken === total) {
-      headline = '全部完成';
+      headline = '已完成';
       subline = `今天 ${total} 次都已服`;
       tone = 'done';
     } else {

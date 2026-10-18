@@ -61,9 +61,18 @@ export default class EntryFormAbility extends FormExtensionAbility {
     if (params === undefined || params === null) {
       return false;
     }
+    // formInfo.FormParam.DIMENSION_KEY 的值是 FormDimension **数值枚举**（1=1*2、2=2*2、4=4*4…），
+    // 不是 "2*2" 字符串 —— 之前按字符串比较，导致 2*2 也被当成大卡、把明细挤进了小卡。
     const raw: Object | undefined = params[formInfo.FormParam.DIMENSION_KEY];
-    const dim: string = raw === undefined || raw === null ? '' : String(raw);
-    return dim.length > 0 && dim !== '2*2';
+    if (raw === undefined || raw === null) {
+      return false;
+    }
+    const dim: number = Number(raw);
+    if (Number.isNaN(dim)) {
+      return false;
+    }
+    // 本卡片只声明了 2*2 与 4*4：4*4 才算大卡，其余一律按小卡处理（信息更克制）
+    return dim === formInfo.FormDimension.Dimension_4_4;
   }
 
   /** 从 want 里取卡片实例 id（不同 API 版本字段位置一致，取不到则用空串兜底） */
