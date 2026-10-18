@@ -230,5 +230,15 @@ struct MedTodayCard {
     .backgroundColor($r('app.color.card_bg'))
     .borderWidth(1)
     .borderColor($r('app.color.card_border'))
+    // 点卡片任意位置 → 打开 App（进入 EntryAbility；带参数便于 App 侧区分来源）
+    .onClick(() => {
+      postCardAction(this, {
+        action: 'router',
+        abilityName: 'EntryAbility',
+        params: {
+          from: 'med_today_card'
+        }
+      });
+    })
   }
 }
