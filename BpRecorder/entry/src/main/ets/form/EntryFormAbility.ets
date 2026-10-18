@@ -35,7 +35,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
     const placeholder: TodayCardBinding = {
       hasPlan: 0, total: 0, taken: 0, pending: 0, missed: 0,
       headline: '读取中', subline: '正在读取今日用药…', tone: 'idle',
-      nextTime: '', rowsText: '', rowCount: 0, updatedAt: '', showRows: big ? 1 : 0
+      nextTime: '', rowsText: '', rowCount: 0, updatedAt: '', showRows: big ? 1 : 0,
+      dateLabel: '', rowsJson: '[]'
     };
     return formBindingData.createFormBindingData(placeholder);
   }
@@ -88,7 +89,8 @@ export default class EntryFormAbility extends FormExtensionAbility {
   /** 绑定字段：在基础字段上补 showRows（大卡才展示分次明细） */
   static bindingOf(data: TodayCardData, big: boolean): TodayCardBinding {
     const base: TodayCardBinding = TodayCardBuilder.toBinding(data);
-    base.showRows = big ? 1 : 0;
+    // 本卡片只声明了 6*4 长条形：始终展示明细
+    base.showRows = 1;
     return base;
   }
 

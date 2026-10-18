@@ -28,7 +28,7 @@ export class TodayCardService {
   /** 绑定字段：基础字段 + showRows */
   static bindingOf(data: TodayCardData, big: boolean): TodayCardBinding {
     const base: TodayCardBinding = TodayCardBuilder.toBinding(data);
-    base.showRows = big ? 1 : 0;
+    base.showRows = 1;   // 只有 6*4 长条形卡片：始终展示明细
     return base;
   }
 

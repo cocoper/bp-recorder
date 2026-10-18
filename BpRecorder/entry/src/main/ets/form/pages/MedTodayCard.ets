@@ -1,5 +1,13 @@
-/** 桌面卡片「今日用药」的 UI（2*2 与 4*4 共用；vp 绝对尺寸，不随 designWidth 缩放） */
+/** 桌面卡片「今日用药」——长条（6*4）：左侧整体进度，右侧每一次用药明细 */
 let storage: LocalStorage = new LocalStorage();
+
+/** 明细行（与 TodayCardRow 一致，卡片侧自行解析） */
+interface CardRow {
+  time: string;
+  name: string;
+  status: string;
+  label: string;
+}
 
 @Entry(storage)
 @Component
@@ -9,11 +17,10 @@ struct MedTodayCard {
   @LocalStorageProp('tone') tone: string = 'idle';
   @LocalStorageProp('total') total: number = 0;
   @LocalStorageProp('taken') taken: number = 0;
-  @LocalStorageProp('rowsText') rowsText: string = '';
-  @LocalStorageProp('rowCount') rowCount: number = 0;
   @LocalStorageProp('updatedAt') updatedAt: string = '';
-  /** 1 = 大卡（展示分次明细） */
-  @LocalStorageProp('showRows') showRows: number = 0;
+  @LocalStorageProp('dateLabel') dateLabel: string = '';
+  @LocalStorageProp('rowsJson') rowsJson: string = '[]';
+  @LocalStorageProp('rowCount') rowCount: number = 0;
 
   private accent(): Resource {
     if (this.tone === 'missed') {
@@ -28,6 +35,19 @@ struct MedTodayCard {
     return $r('app.color.card_tone_idle');
   }
 
+  private rowColor(status: string): Resource {
+    if (status === 'taken') {
+      return $r('app.color.card_tone_done');
+    }
+    if (status === 'missed') {
+      return $r('app.color.card_tone_missed');
+    }
+    if (status === 'skipped') {
+      return $r('app.color.card_tone_idle');
+    }
+    return $r('app.color.card_tone_next');
+  }
+
   private percent(): string {
     if (this.total <= 0) {
       return '0%';
@@ -36,9 +56,17 @@ struct MedTodayCard {
     return `${p > 100 ? 100 : p}%`;
   }
 
+  private rows(): CardRow[] {
+    try {
+      return JSON.parse(this.rowsJson) as CardRow[];
+    } catch (err) {
+      return [];
+    }
+  }
+
   build() {
     Column() {
-      // 顶部：状态点 + 标题 + 刷新时间
+      // 顶部：状态点 + 标题 + 日期/刷新时间
       Row() {
         Row()
           .width(8)
@@ -46,60 +74,96 @@ struct MedTodayCard {
           .borderRadius(4)
           .backgroundColor(this.accent())
         Text('今日用药')
-          .fontSize(13)
+          .fontSize(14)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.card_text'))
           .margin({ left: 7 })
         Blank()
-        Text(this.updatedAt)
+        Text(`${this.dateLabel}  ${this.updatedAt}`)
           .fontSize(11)
           .fontColor($r('app.color.card_text_dim'))
       }
       .width('100%')
 
-      // 大号状态（直接作为外层 Column 的子节点，宽度才稳定）
-      Text(this.headline)
-        .width('100%')
-        .fontSize(this.showRows === 1 ? 48 : 34)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.accent())
-        .maxLines(2)
-        .textAlign(TextAlign.Start)
-      Text(this.subline)
-        .width('100%')
-        .fontSize(13)
-        .fontColor($r('app.color.card_text_dim'))
-        .margin({ top: 3 })
-        .maxLines(2)
-        .textAlign(TextAlign.Start)
-
-      if (this.showRows === 1 && this.rowCount > 0) {
-        Text(this.rowsText)
-          .width('100%')
-          .fontSize(12)
-          .lineHeight(18)
-          .fontColor($r('app.color.card_text'))
-          .margin({ top: 8 })
-          .maxLines(3)
-      }
-
-      // 弹性空白：把进度条压到卡片底部（Blank 在卡片里不一定撑开，用 layoutWeight 更可靠）
-      Row()
-        .width('100%')
-        .layoutWeight(1)
-
-      // 进度条：轨道 + 已完成部分
       Row() {
-        Row()
-          .width(this.percent())
-          .height('100%')
-          .borderRadius(5)
-          .backgroundColor(this.accent())
+        // 左：整体进度
+        Column() {
+          Text(this.headline)
+            .width('100%')
+            .fontSize(34)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.accent())
+            .maxLines(2)
+          Text(this.subline)
+            .width('100%')
+            .fontSize(12)
+            .fontColor($r('app.color.card_text_dim'))
+            .margin({ top: 2 })
+            .maxLines(2)
+
+          Row()
+            .width('100%')
+            .layoutWeight(1)
+
+          Row() {
+            Row()
+              .width(this.percent())
+              .height('100%')
+              .borderRadius(4)
+              .backgroundColor(this.accent())
+          }
+          .width('100%')
+          .height(8)
+          .borderRadius(4)
+          .backgroundColor($r('app.color.card_bar_track'))
+        }
+        .layoutWeight(4)
+        .alignItems(HorizontalAlign.Start)
+        .height('100%')
+
+        // 右：每一次用药明细（时间 · 药品 · 状态）
+        Column() {
+          if (this.rowCount === 0) {
+            Text('今天没有用药安排')
+              .fontSize(12)
+              .fontColor($r('app.color.card_text_dim'))
+              .width('100%')
+          }
+          ForEach(this.rows(), (row: CardRow) => {
+            Row() {
+              Row()
+                .width(6)
+                .height(6)
+                .borderRadius(3)
+                .backgroundColor(this.rowColor(row.status))
+              Text(row.time)
+                .fontSize(11)
+                .fontColor($r('app.color.card_text_dim'))
+                .margin({ left: 6 })
+                .width(40)
+              Text(row.name)
+                .fontSize(12)
+                .fontColor($r('app.color.card_text'))
+                .layoutWeight(1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(row.label)
+                .fontSize(11)
+                .fontColor(this.rowColor(row.status))
+            }
+            .width('100%')
+            .margin({ top: 3 })
+          }, (row: CardRow) => `${row.time}_${row.name}_${row.status}`)
+        }
+        .layoutWeight(5)
+        .alignItems(HorizontalAlign.Start)
+        .height('100%')
+        .margin({ left: 14 })
       }
       .width('100%')
-      .height(10)
-      .borderRadius(5)
-      .backgroundColor($r('app.color.card_bar_track'))
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Top)
+      .margin({ top: 10 })
     }
     .width('100%')
     .height('100%')

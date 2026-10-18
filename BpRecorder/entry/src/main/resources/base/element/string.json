@@ -6,7 +6,7 @@
     },
     {
       "name": "card_med_today_desc",
-      "value": "显示今天每次用药的完成情况与下一次时间"
+      "value": "长条卡片：今天的整体完成情况 + 每一次用药的时间、药品与状态"
     },
     {
       "name": "card_med_today_name",

@@ -40,9 +40,11 @@ export interface TodayCardData {
   rows: TodayCardRow[];
   /** 刷新时间 HH:mm（卡片角标） */
   updatedAt: string;
+  /** 今日日期标签，如「10月18日」 */
+  dateLabel: string;
 }
 
-const MAX_ROWS: number = 3;
+const MAX_ROWS: number = 6;   // 长条卡片放得下 6 行明细
 
 /** 卡片绑定字段（ArkTS 要求字面量有显式类型） */
 export interface TodayCardBinding {
@@ -58,6 +60,10 @@ export interface TodayCardBinding {
   rowsText: string;
   rowCount: number;
   updatedAt: string;
+  /** 今日日期标签，如「10月18日」 */
+  dateLabel: string;
+  /** 明细行的 JSON（卡片侧 ForEach 渲染，避免用换行文本丢了状态色） */
+  rowsJson: string;
   /** 1 = 大卡（展示分次明细） */
   showRows: number;
 }
@@ -123,7 +129,8 @@ export class TodayCardBuilder {
     return {
       hasPlan: total > 0, total: total, taken: taken, pending: pending, missed: missed, skipped: skipped,
       headline: headline, subline: subline, tone: tone, nextTime: nextTime, rows: rows,
-      updatedAt: DateUtils.formatTime(now)
+      updatedAt: DateUtils.formatTime(now),
+      dateLabel: DateUtils.formatMonthDay(now)
     };
   }
 
@@ -142,7 +149,8 @@ export class TodayCardBuilder {
       total: data.total, taken: data.taken, pending: data.pending, missed: data.missed,
       headline: data.headline, subline: data.subline, tone: data.tone,
       nextTime: data.nextTime, rowsText: rowText, rowCount: data.rows.length,
-      updatedAt: data.updatedAt, showRows: 0
+      updatedAt: data.updatedAt, showRows: 0,
+      dateLabel: data.dateLabel, rowsJson: JSON.stringify(data.rows)
     };
   }
 }

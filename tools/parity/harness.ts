@@ -2295,15 +2295,17 @@ async function reviewScenarios(): Promise<void> {
 
     // 明细最多 3 行，绑定字段扁平化
     const many: MedLog[] = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       many.push(mlog(ts(2026, 10, 11, 6 + i, 0), MedLogStatus.PENDING, null, 10 + i));
     }
     const manyCard: TodayCardData = TodayCardBuilder.build(many, ts(2026, 10, 11, 5, 0));
-    eq(manyCard.rows.length, 3, '卡片：明细最多 3 行（大卡也放得下）');
+    eq(manyCard.rows.length, 6, '卡片：明细最多 6 行（长条卡片放得下）');
     const binding: TodayCardBinding = TodayCardBuilder.toBinding(manyCard);
-    eq(binding.rowCount, 3, '卡片：绑定字段带行数');
+    eq(binding.rowCount, 6, '卡片：绑定字段带行数');
     eq(binding.showRows, 0, '卡片：默认不展示明细（由尺寸决定）');
-    eq(binding.rowsText.split('\n').length, 3, '卡片：明细文本 3 行');
+    eq(binding.rowsText.split('\n').length, 6, '卡片：明细文本 6 行');
+    eq((JSON.parse(binding.rowsJson) as unknown[]).length, 6, '卡片：明细 JSON 6 条（供卡片 ForEach 渲染）');
+    ok(binding.dateLabel.length > 0, '卡片：带日期标签');
   }
 
   group('审查反例 R17（测试实例隔离）');
